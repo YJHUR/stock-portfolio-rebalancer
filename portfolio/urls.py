@@ -14,7 +14,9 @@ urlpatterns = [
     path("accounts/<int:pk>/update/", views.update_account, name="update_account"),
     path("accounts/<int:pk>/delete/", views.delete_account, name="delete_account"),
     path("cashflows/new/", views.create_cashflow, name="create_cashflow"),
+    path("cashflows/<int:pk>/update/", views.update_cashflow, name="update_cashflow"),
     path("trades/new/", views.create_trade, name="create_trade"),
+    path("trades/<int:pk>/update/", views.update_trade, name="update_trade"),
     path("prices/update/", views.update_prices, name="update_prices"),
     path("rebalance/categories/add/", views.add_rebalance_category, name="add_rebalance_category"),
     path(
@@ -40,6 +42,7 @@ urlpatterns = [
     ),
     path("prices/manual/", views.upsert_manual_price, name="upsert_manual_price"),
     path("stocks/lookup-name/", views.lookup_stock_name, name="lookup_stock_name"),
+    path("trades/preview-fee/", views.preview_trade_fee, name="preview_trade_fee"),
     path("rebalance/stocks/<int:pk>/update/", views.update_rebalance_stock, name="update_rebalance_stock"),
     path("rebalance/stocks/<int:pk>/delete/", views.delete_rebalance_stock, name="delete_rebalance_stock"),
 ]

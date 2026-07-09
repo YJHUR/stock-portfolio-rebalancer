@@ -217,6 +217,133 @@
             align-items: center;
             gap: 4px;
         }
+        .inline-trade-select {
+            width: 130px;
+            padding: 4px 6px;
+            border-radius: 6px;
+            border: 1px solid var(--line);
+            font-size: 0.78rem;
+            background: #fff;
+        }
+        .inline-trade-date {
+            width: 140px;
+            padding: 4px 6px;
+            border-radius: 6px;
+            border: 1px solid var(--line);
+            font-size: 0.78rem;
+        }
+        .inline-trade-memo {
+            width: 180px;
+            padding: 4px 6px;
+            border-radius: 6px;
+            border: 1px solid var(--line);
+            font-size: 0.78rem;
+        }
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.42);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 16px;
+        }
+        .modal-backdrop[hidden] {
+            display: none;
+        }
+        .modal-card {
+            width: min(760px, 100%);
+            background: #fff;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 14px;
+            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.22);
+        }
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        .modal-title {
+            margin: 0;
+            font-size: 1rem;
+        }
+        .modal-close {
+            background: #e5e7eb;
+            color: #1f2937;
+            border: none;
+            border-radius: 8px;
+            padding: 6px 9px;
+            cursor: pointer;
+            font-size: 0.84rem;
+            font-weight: 700;
+        }
+        .modal-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+        }
+        .modal-grid .field-wrap {
+            min-width: 0;
+        }
+        .modal-grid .field-wrap.full {
+            grid-column: 1 / -1;
+        }
+        .modal-grid input,
+        .modal-grid select,
+        .modal-grid textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            font-size: 0.88rem;
+        }
+        .modal-actions {
+            margin-top: 10px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+        .btn-muted {
+            background: #eef2f7;
+            color: #324155;
+        }
+        .type-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            line-height: 1.2;
+            border: 1px solid transparent;
+        }
+        .type-badge.account {
+            background: #eef2ff;
+            color: #3447a3;
+            border-color: #cfd8ff;
+        }
+        .type-badge.deposit {
+            background: #e9f9ef;
+            color: #117a4e;
+            border-color: #bdeccf;
+        }
+        .type-badge.withdraw {
+            background: #fff2f2;
+            color: #b12828;
+            border-color: #ffd0d0;
+        }
+        .type-badge.buy {
+            background: #eef6ff;
+            color: #1f57b5;
+            border-color: #cfe1ff;
+        }
+        .type-badge.sell {
+            background: #fff3ea;
+            color: #a34b16;
+            border-color: #ffd9bf;
+        }
         .unit-badge {
             font-size: 0.78rem;
             color: var(--sub);
@@ -440,6 +567,9 @@
             }
             .account-add-form {
                 grid-template-columns: 1fr 1fr;
+            }
+            .modal-grid {
+                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -913,22 +1043,29 @@
                     <button type="submit">저장</button>
                 </div>
             </form>
-            <h2>최근 입출금</h2>
-            <table>
-                <thead><tr><th>일자</th><th>계좌</th><th>구분</th><th>금액</th></tr></thead>
-                <tbody>
-                {% for row in recent_cashflows %}
-                    <tr>
-                        <td>{{ row.occurred_on }}</td>
-                        <td>{{ row.account.name }}</td>
-                        <td>{{ row.get_flow_type_display }}</td>
-                        <td>{{ row.amount|intcomma }}</td>
-                    </tr>
-                {% empty %}
-                    <tr><td colspan="4">내역 없음</td></tr>
-                {% endfor %}
-                </tbody>
-            </table>
+            <h2 style="margin-top: 12px;">계좌 추가</h2>
+            <form action="{% url 'portfolio:create_account' %}" method="post">
+                {% csrf_token %}
+                <div class="cashflow-row-top">
+                    <div>
+                        <label for="{{ account_add_form.account_group.id_for_label }}" class="compact-field-label">Account Group</label>
+                        {{ account_add_form.account_group }}
+                    </div>
+                    <div>
+                        <label for="{{ account_add_form.account_name.id_for_label }}" class="compact-field-label">Account Name</label>
+                        {{ account_add_form.account_name }}
+                    </div>
+                    <div>
+                        <label for="{{ account_add_form.cash_balance.id_for_label }}" class="compact-field-label">Initial Deposit</label>
+                        {{ account_add_form.cash_balance }}
+                    </div>
+                    <div></div>
+                </div>
+                <div class="cashflow-row-bottom">
+                    <div class="muted">계좌 개설 내역은 하단 통합표에 표시됩니다.</div>
+                    <button type="submit">계좌 추가</button>
+                </div>
+            </form>
         </article>
         <article class="card">
             <h2>거래 내역 입력</h2>
@@ -968,8 +1105,15 @@
                         {{ trade_form.fee }}
                     </div>
                     <div>
-                        <label for="{{ trade_form.tax.id_for_label }}" class="compact-field-label">Tax</label>
-                        {{ trade_form.tax }}
+                        <label for="id_post_trade_cash" class="compact-field-label">거래후 예수금</label>
+                        <input
+                            type="number"
+                            id="id_post_trade_cash"
+                            name="post_trade_cash"
+                            min="0"
+                            step="1"
+                            placeholder="예: 100000"
+                        />
                     </div>
                 </div>
                 <div class="trade-row-4">
@@ -977,104 +1121,248 @@
                         <label for="{{ trade_form.memo.id_for_label }}" class="compact-field-label">Memo</label>
                         {{ trade_form.memo }}
                     </div>
+                    <input type="hidden" name="tax" value="0" />
                     <button type="submit">저장</button>
                 </div>
             </form>
-            <h2>최근 거래</h2>
-            <table>
-                <thead><tr><th>일자</th><th>계좌</th><th>종목</th><th>구분</th><th>수량</th><th>단가</th></tr></thead>
-                <tbody>
-                {% for row in recent_trades %}
-                    <tr>
-                        <td>{{ row.traded_on }}</td>
-                        <td>{{ row.account.name }}</td>
-                        <td>{{ row.stock.ticker }}</td>
-                        <td>{{ row.get_trade_type_display }}</td>
-                        <td>{{ row.quantity|intcomma }}</td>
-                        <td>{{ row.price|intcomma }}</td>
-                    </tr>
-                {% empty %}
-                    <tr><td colspan="6">내역 없음</td></tr>
-                {% endfor %}
-                </tbody>
-            </table>
         </article>
     </section>
 
     <section class="card">
-        <h2>계좌 관리</h2>
-        <form action="{% url 'portfolio:create_account' %}" method="post" class="account-add-form">
-            {% csrf_token %}
-            <div class="field-wrap">
-                <label for="{{ account_add_form.account_group.id_for_label }}" class="compact-field-label">Account Group</label>
-                {{ account_add_form.account_group }}
-            </div>
-            <div class="field-wrap">
-                <label for="{{ account_add_form.account_name.id_for_label }}" class="compact-field-label">Account Name</label>
-                {{ account_add_form.account_name }}
-            </div>
-            <div class="field-wrap">
-                <label for="{{ account_add_form.cash_balance.id_for_label }}" class="compact-field-label">Initial Deposit</label>
-                {{ account_add_form.cash_balance }}
-            </div>
-            <button type="submit">계좌 추가</button>
-        </form>
+        <h2>통합 거래/입출금/계좌 내역</h2>
         <table>
             <thead>
-            <tr><th>그룹</th><th>계좌명</th><th>최초입금</th><th>관리</th></tr>
+            <tr><th>일자</th><th>계좌</th><th>구분</th><th>수량</th><th>단가(금액)</th><th>예수금</th><th>관리</th></tr>
             </thead>
             <tbody>
-            {% for row in account_rows %}
+            {% for row in unified_activity_rows %}
                 <tr>
+                    <td>{{ row.event_date }}</td>
+                    <td>{{ row.account_name }}</td>
                     <td>
-                        <input
-                            type="text"
-                            name="account_group"
-                            value="{{ row.account.account_group }}"
-                            class="account-group-select"
-                            form="acct-update-{{ row.account.id }}"
-                            required
-                        />
+                        {% if row.row_type == "account" %}
+                            <span class="type-badge account">{{ row.kind_label }}</span>
+                        {% elif row.row_type == "cashflow" and row.flow_type == "DEPOSIT" %}
+                            <span class="type-badge deposit">{{ row.kind_label }}</span>
+                        {% elif row.row_type == "cashflow" and row.flow_type == "WITHDRAW" %}
+                            <span class="type-badge withdraw">{{ row.kind_label }}</span>
+                        {% elif row.row_type == "trade" and row.trade_type == "BUY" %}
+                            <span class="type-badge buy">{{ row.kind_label }}</span>
+                        {% elif row.row_type == "trade" and row.trade_type == "SELL" %}
+                            <span class="type-badge sell">{{ row.kind_label }}</span>
+                        {% else %}
+                            <span class="type-badge">{{ row.kind_label }}</span>
+                        {% endif %}
                     </td>
                     <td>
-                        <input
-                            type="text"
-                            name="account_name"
-                            value="{{ row.account.name }}"
-                            class="account-name-input"
-                            form="acct-update-{{ row.account.id }}"
-                            required
-                        />
+                        {% if row.quantity is not None %}
+                            {{ row.quantity|intcomma }}
+                        {% else %}
+                            -
+                        {% endif %}
                     </td>
+                    <td>{{ row.unit_amount|intcomma }}</td>
+                    <td>{{ row.cash_balance|intcomma }}</td>
                     <td>
-                        <input
-                            type="number"
-                            name="initial_balance"
-                            min="0"
-                            step="1"
-                            value="{{ row.initial_balance }}"
-                            class="account-cash-input"
-                            form="acct-update-{{ row.account.id }}"
-                            required
-                        />
-                    </td>
-                    <td>
-                        <form id="acct-update-{{ row.account.id }}" action="{% url 'portfolio:update_account' row.account.id %}" method="post" style="display: inline;">
-                            {% csrf_token %}
-                            <button type="submit" class="btn-inline">수정</button>
-                        </form>
-                        <form action="{% url 'portfolio:delete_account' row.account.id %}" method="post" style="display: inline;">
-                            {% csrf_token %}
-                            <button type="submit" class="btn-inline">삭제</button>
-                        </form>
+                        {% if row.row_type == "cashflow" %}
+                            <button
+                                type="button"
+                                class="btn-inline open-cashflow-edit"
+                                data-update-url="{% url 'portfolio:update_cashflow' row.cashflow_id %}"
+                                data-account-id="{{ row.account_id }}"
+                                data-flow-type="{{ row.flow_type }}"
+                                data-amount="{{ row.amount }}"
+                                data-occurred-on="{{ row.event_date|date:'Y-m-d' }}"
+                                data-memo="{{ row.memo|escape }}"
+                            >
+                                수정
+                            </button>
+                        {% elif row.row_type == "trade" %}
+                            <button
+                                type="button"
+                                class="btn-inline open-trade-edit"
+                                data-trade-id="{{ row.trade_id }}"
+                                data-update-url="{% url 'portfolio:update_trade' row.trade_id %}"
+                                data-account-id="{{ row.account_id }}"
+                                data-stock-id="{{ row.stock_id }}"
+                                data-trade-type="{{ row.trade_type }}"
+                                data-quantity="{{ row.quantity }}"
+                                data-price="{{ row.price }}"
+                                data-fee="{{ row.fee }}"
+                                data-tax="{{ row.tax }}"
+                                data-traded-on="{{ row.event_date|date:'Y-m-d' }}"
+                                data-memo="{{ row.memo|escape }}"
+                            >
+                                수정
+                            </button>
+                        {% else %}
+                            <button
+                                type="button"
+                                class="btn-inline open-account-edit"
+                                data-update-url="{% url 'portfolio:update_account' row.account_id %}"
+                                data-delete-url="{% url 'portfolio:delete_account' row.account_id %}"
+                                data-account-group="{{ row.account_group|escape }}"
+                                data-account-name="{{ row.account_name|escape }}"
+                                data-initial-balance="{{ row.initial_balance }}"
+                            >
+                                수정
+                            </button>
+                        {% endif %}
                     </td>
                 </tr>
             {% empty %}
-                <tr><td colspan="4">등록된 계좌가 없습니다.</td></tr>
+                <tr><td colspan="7">내역이 없습니다.</td></tr>
             {% endfor %}
             </tbody>
         </table>
     </section>
+
+    <div id="cashflowEditModal" class="modal-backdrop" hidden>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="cashflowEditModalTitle">
+            <div class="modal-header">
+                <h3 id="cashflowEditModalTitle" class="modal-title">입출금 내역 수정</h3>
+                <button type="button" id="cashflowEditCloseTop" class="modal-close">닫기</button>
+            </div>
+            <form id="cashflowEditForm" method="post">
+                {% csrf_token %}
+                <div class="modal-grid">
+                    <div class="field-wrap">
+                        <label for="modalCashflowDate" class="compact-field-label">Date</label>
+                        <input type="date" id="modalCashflowDate" name="occurred_on" required />
+                    </div>
+                    <div class="field-wrap">
+                        <label for="modalCashflowAccount" class="compact-field-label">Account</label>
+                        <select id="modalCashflowAccount" name="account">
+                            {% for account in accounts %}
+                                <option value="{{ account.id }}">{{ account.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="field-wrap">
+                        <label for="modalCashflowType" class="compact-field-label">Flow</label>
+                        <select id="modalCashflowType" name="flow_type">
+                            {% for value, label in cashflow_type_choices %}
+                                <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="field-wrap">
+                        <label for="modalCashflowAmount" class="compact-field-label">Amount</label>
+                        <input type="number" id="modalCashflowAmount" name="amount" min="1" step="1" required />
+                    </div>
+                    <div class="field-wrap full">
+                        <label for="modalCashflowMemo" class="compact-field-label">Memo</label>
+                        <textarea id="modalCashflowMemo" name="memo" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" id="cashflowEditCancel" class="btn-muted">취소</button>
+                    <button type="submit">수정 저장</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="tradeEditModal" class="modal-backdrop" hidden>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="tradeEditModalTitle">
+            <div class="modal-header">
+                <h3 id="tradeEditModalTitle" class="modal-title">거래 내역 수정</h3>
+                <button type="button" id="tradeEditCloseTop" class="modal-close">닫기</button>
+            </div>
+            <form id="tradeEditForm" method="post">
+                {% csrf_token %}
+                <div class="modal-grid">
+                    <div class="field-wrap">
+                        <label for="modalTradeDate" class="compact-field-label">Date</label>
+                        <input type="date" id="modalTradeDate" name="traded_on" required />
+                    </div>
+                    <div class="field-wrap">
+                        <label for="modalTradeType" class="compact-field-label">Type</label>
+                        <select id="modalTradeType" name="trade_type">
+                            {% for value, label in trade_type_choices %}
+                                <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="field-wrap">
+                        <label for="modalTradeAccount" class="compact-field-label">Account</label>
+                        <select id="modalTradeAccount" name="account">
+                            {% for account in accounts %}
+                                <option value="{{ account.id }}">{{ account.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="field-wrap">
+                        <label for="modalTradeStock" class="compact-field-label">Stock</label>
+                        <select id="modalTradeStock" name="stock">
+                            {% for stock in stocks %}
+                                <option value="{{ stock.id }}">{{ stock.ticker }} {{ stock.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="field-wrap">
+                        <label for="modalTradeQty" class="compact-field-label">Qty</label>
+                        <input type="number" id="modalTradeQty" name="quantity" min="1" step="1" required />
+                    </div>
+                    <div class="field-wrap">
+                        <label for="modalTradePrice" class="compact-field-label">Price</label>
+                        <input type="number" id="modalTradePrice" name="price" min="1" step="1" required />
+                    </div>
+                    <div class="field-wrap">
+                        <label for="modalTradeFee" class="compact-field-label">Fee</label>
+                        <input type="number" id="modalTradeFee" name="fee" min="0" step="1" />
+                    </div>
+                    <div class="field-wrap">
+                        <label for="modalPostTradeCash" class="compact-field-label">거래후 예수금</label>
+                        <input type="number" id="modalPostTradeCash" name="post_trade_cash" min="0" step="1" />
+                    </div>
+                    <div class="field-wrap full">
+                        <label for="modalTradeMemo" class="compact-field-label">Memo</label>
+                        <textarea id="modalTradeMemo" name="memo" rows="2"></textarea>
+                    </div>
+                </div>
+                <input type="hidden" id="modalTradeTax" name="tax" value="0" />
+                <div class="modal-actions">
+                    <button type="button" id="tradeEditCancel" class="btn-muted">취소</button>
+                    <button type="submit">수정 저장</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="accountEditModal" class="modal-backdrop" hidden>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="accountEditModalTitle">
+            <div class="modal-header">
+                <h3 id="accountEditModalTitle" class="modal-title">계좌 정보 수정</h3>
+                <button type="button" id="accountEditCloseTop" class="modal-close">닫기</button>
+            </div>
+            <form id="accountEditForm" method="post">
+                {% csrf_token %}
+                <div class="modal-grid">
+                    <div class="field-wrap">
+                        <label for="modalAccountGroup" class="compact-field-label">Account Group</label>
+                        <input type="text" id="modalAccountGroup" name="account_group" required />
+                    </div>
+                    <div class="field-wrap">
+                        <label for="modalAccountName" class="compact-field-label">Account Name</label>
+                        <input type="text" id="modalAccountName" name="account_name" required />
+                    </div>
+                    <div class="field-wrap">
+                        <label for="modalAccountInitialBalance" class="compact-field-label">Initial Deposit</label>
+                        <input type="number" id="modalAccountInitialBalance" name="initial_balance" min="0" step="1" required />
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" id="accountEditCancel" class="btn-muted">취소</button>
+                    <button type="submit">수정 저장</button>
+                </div>
+            </form>
+            <form id="accountDeleteForm" method="post" style="margin-top: 8px; text-align: right;">
+                {% csrf_token %}
+                <button type="submit" class="btn-inline">계좌 삭제</button>
+            </form>
+        </div>
+    </div>
 </main>
 
 <script>
@@ -1151,6 +1439,265 @@
             } catch (_error) {
                 setHint("조회 중 오류가 발생했습니다. 종목명을 직접 입력해주세요.", "bad");
             }
+        });
+    })();
+
+    (function setupTradeEditModal() {
+        const modal = document.getElementById("tradeEditModal");
+        const form = document.getElementById("tradeEditForm");
+        if (!modal || !form) return;
+        const feePreviewUrl = "{% url 'portfolio:preview_trade_fee' %}";
+
+        const closeTopButton = document.getElementById("tradeEditCloseTop");
+        const cancelButton = document.getElementById("tradeEditCancel");
+        const accountField = document.getElementById("modalTradeAccount");
+        const stockField = document.getElementById("modalTradeStock");
+        const typeField = document.getElementById("modalTradeType");
+        const quantityField = document.getElementById("modalTradeQty");
+        const priceField = document.getElementById("modalTradePrice");
+        const feeField = document.getElementById("modalTradeFee");
+        const taxField = document.getElementById("modalTradeTax");
+        const postTradeCashField = document.getElementById("modalPostTradeCash");
+        const dateField = document.getElementById("modalTradeDate");
+        const memoField = document.getElementById("modalTradeMemo");
+        const openButtons = document.querySelectorAll(".open-trade-edit");
+        const createAccountField = document.getElementById("id_account");
+        const createTypeField = document.getElementById("id_trade_type");
+        const createQuantityField = document.getElementById("id_quantity");
+        const createPriceField = document.getElementById("id_price");
+        const createPostTradeCashField = document.getElementById("id_post_trade_cash");
+        const createFeeField = document.getElementById("id_fee");
+        let currentEditTradeId = "";
+        const feePreviewDebounce = {
+            create: null,
+            edit: null,
+        };
+
+        const toQueryString = (params) =>
+            Object.entries(params)
+                .filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== "")
+                .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+                .join("&");
+
+        const requestFeePreview = async ({
+            accountId,
+            tradeType,
+            quantity,
+            price,
+            tradedOn,
+            postTradeCash,
+            excludeTradeId,
+        }) => {
+            const query = toQueryString({
+                account: accountId,
+                trade_type: tradeType,
+                quantity,
+                price,
+                traded_on: tradedOn,
+                post_trade_cash: postTradeCash,
+                exclude_trade_id: excludeTradeId,
+            });
+            if (!query) return null;
+            const response = await fetch(`${feePreviewUrl}?${query}`, { method: "GET" });
+            const data = await response.json();
+            if (!response.ok || !data.ok) return null;
+            return data.fee;
+        };
+
+        const bindFeeAutoCalc = ({
+            modeKey,
+            accountField,
+            typeField,
+            quantityField,
+            priceField,
+            tradedOnField,
+            postTradeCashField,
+            feeField,
+            excludeTradeIdProvider,
+        }) => {
+            const update = () => {
+                if (feePreviewDebounce[modeKey]) clearTimeout(feePreviewDebounce[modeKey]);
+                feePreviewDebounce[modeKey] = setTimeout(async () => {
+                    try {
+                        const fee = await requestFeePreview({
+                            accountId: accountField.value,
+                            tradeType: typeField.value,
+                            quantity: quantityField.value,
+                            price: priceField.value,
+                            tradedOn: tradedOnField.value,
+                            postTradeCash: postTradeCashField.value,
+                            excludeTradeId: excludeTradeIdProvider ? excludeTradeIdProvider() : "",
+                        });
+                        if (fee === null) return;
+                        feeField.value = String(fee);
+                    } catch (_error) {
+                        // 네트워크/검증 오류 시 기존 fee 값을 유지한다.
+                    }
+                }, 220);
+            };
+
+            [accountField, typeField, quantityField, priceField, tradedOnField, postTradeCashField].forEach((el) => {
+                if (!el) return;
+                el.addEventListener("change", update);
+                el.addEventListener("input", update);
+            });
+        };
+
+        const closeModal = () => {
+            modal.hidden = true;
+            document.body.style.overflow = "";
+            currentEditTradeId = "";
+        };
+
+        const openModal = () => {
+            modal.hidden = false;
+            document.body.style.overflow = "hidden";
+        };
+
+        openButtons.forEach((button) => {
+            button.addEventListener("click", () => {
+                form.action = button.dataset.updateUrl || "";
+                currentEditTradeId = button.dataset.tradeId || "";
+                accountField.value = button.dataset.accountId || "";
+                stockField.value = button.dataset.stockId || "";
+                typeField.value = button.dataset.tradeType || "";
+                quantityField.value = button.dataset.quantity || "1";
+                priceField.value = button.dataset.price || "1";
+                feeField.value = button.dataset.fee || "0";
+                taxField.value = "0";
+                postTradeCashField.value = "";
+                dateField.value = button.dataset.tradedOn || "";
+                memoField.value = button.dataset.memo || "";
+                openModal();
+            });
+        });
+
+        if (closeTopButton) closeTopButton.addEventListener("click", closeModal);
+        if (cancelButton) cancelButton.addEventListener("click", closeModal);
+
+        modal.addEventListener("click", (event) => {
+            if (event.target === modal) closeModal();
+        });
+
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape" && !modal.hidden) closeModal();
+        });
+
+        bindFeeAutoCalc({
+            modeKey: "create",
+            accountField: createAccountField,
+            typeField: createTypeField,
+            quantityField: createQuantityField,
+            priceField: createPriceField,
+            tradedOnField: document.getElementById("id_traded_on"),
+            postTradeCashField: createPostTradeCashField,
+            feeField: createFeeField,
+            excludeTradeIdProvider: null,
+        });
+        bindFeeAutoCalc({
+            modeKey: "edit",
+            accountField,
+            typeField,
+            quantityField,
+            priceField,
+            tradedOnField: dateField,
+            postTradeCashField,
+            feeField,
+            excludeTradeIdProvider: () => currentEditTradeId,
+        });
+    })();
+
+    (function setupCashflowEditModal() {
+        const modal = document.getElementById("cashflowEditModal");
+        const form = document.getElementById("cashflowEditForm");
+        if (!modal || !form) return;
+
+        const closeTopButton = document.getElementById("cashflowEditCloseTop");
+        const cancelButton = document.getElementById("cashflowEditCancel");
+        const accountField = document.getElementById("modalCashflowAccount");
+        const typeField = document.getElementById("modalCashflowType");
+        const amountField = document.getElementById("modalCashflowAmount");
+        const dateField = document.getElementById("modalCashflowDate");
+        const memoField = document.getElementById("modalCashflowMemo");
+        const openButtons = document.querySelectorAll(".open-cashflow-edit");
+
+        const closeModal = () => {
+            modal.hidden = true;
+            document.body.style.overflow = "";
+        };
+
+        const openModal = () => {
+            modal.hidden = false;
+            document.body.style.overflow = "hidden";
+        };
+
+        openButtons.forEach((button) => {
+            button.addEventListener("click", () => {
+                form.action = button.dataset.updateUrl || "";
+                accountField.value = button.dataset.accountId || "";
+                typeField.value = button.dataset.flowType || "";
+                amountField.value = button.dataset.amount || "";
+                dateField.value = button.dataset.occurredOn || "";
+                memoField.value = button.dataset.memo || "";
+                openModal();
+            });
+        });
+
+        if (closeTopButton) closeTopButton.addEventListener("click", closeModal);
+        if (cancelButton) cancelButton.addEventListener("click", closeModal);
+
+        modal.addEventListener("click", (event) => {
+            if (event.target === modal) closeModal();
+        });
+
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape" && !modal.hidden) closeModal();
+        });
+    })();
+
+    (function setupAccountEditModal() {
+        const modal = document.getElementById("accountEditModal");
+        const form = document.getElementById("accountEditForm");
+        const deleteForm = document.getElementById("accountDeleteForm");
+        if (!modal || !form || !deleteForm) return;
+
+        const closeTopButton = document.getElementById("accountEditCloseTop");
+        const cancelButton = document.getElementById("accountEditCancel");
+        const groupField = document.getElementById("modalAccountGroup");
+        const nameField = document.getElementById("modalAccountName");
+        const initialBalanceField = document.getElementById("modalAccountInitialBalance");
+        const openButtons = document.querySelectorAll(".open-account-edit");
+
+        const closeModal = () => {
+            modal.hidden = true;
+            document.body.style.overflow = "";
+        };
+
+        const openModal = () => {
+            modal.hidden = false;
+            document.body.style.overflow = "hidden";
+        };
+
+        openButtons.forEach((button) => {
+            button.addEventListener("click", () => {
+                form.action = button.dataset.updateUrl || "";
+                deleteForm.action = button.dataset.deleteUrl || "";
+                groupField.value = button.dataset.accountGroup || "";
+                nameField.value = button.dataset.accountName || "";
+                initialBalanceField.value = button.dataset.initialBalance || "0";
+                openModal();
+            });
+        });
+
+        if (closeTopButton) closeTopButton.addEventListener("click", closeModal);
+        if (cancelButton) cancelButton.addEventListener("click", closeModal);
+
+        modal.addEventListener("click", (event) => {
+            if (event.target === modal) closeModal();
+        });
+
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape" && !modal.hidden) closeModal();
         });
     })();
 </script>

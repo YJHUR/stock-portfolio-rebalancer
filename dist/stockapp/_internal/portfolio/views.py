@@ -1,11 +1,11 @@
-from datetime import date
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
 from urllib.parse import quote
 
 from django.contrib import messages
 from django.core.management import call_command
 from django.db import transaction
-from django.db.models import Max, Sum
+from django.db.models import Max, Min, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.shortcuts import redirect, render
@@ -58,6 +58,261 @@ from .services import (
 )
 
 ACTIVE_PORTFOLIO_COOKIE = "active_portfolio_id"
+
+
+def _parse_optional_non_negative_int(raw_value: str | None) -> int | None:
+    if raw_value is None:
+        return None
+    stripped = raw_value.strip()
+    if stripped == "":
+        return None
+    parsed = int(stripped)
+    if parsed < 0:
+        raise ValueError("negative value")
+    return parsed
+
+
+def _cashflow_effect_total(
+    account: Account,
+    *,
+    up_to_date: date | None = None,
+    exclude_cashflow_id: int | None = None,
+) -> int:
+    queryset = CashFlow.objects.filter(account=account)
+    if up_to_date is not None:
+        queryset = queryset.filter(occurred_on__lte=up_to_date)
+    if exclude_cashflow_id is not None:
+        queryset = queryset.exclude(pk=exclude_cashflow_id)
+    total = 0
+    for flow in queryset:
+        total += flow.amount if flow.flow_type == CashFlow.DEPOSIT else -flow.amount
+    return total
+
+
+def _trade_effect_total(
+    account: Account,
+    *,
+    up_to_date: date | None = None,
+    exclude_trade_id: int | None = None,
+) -> int:
+    queryset = Trade.objects.filter(account=account)
+    if up_to_date is not None:
+        queryset = queryset.filter(traded_on__lte=up_to_date)
+    if exclude_trade_id is not None:
+        queryset = queryset.exclude(pk=exclude_trade_id)
+    return sum(item.net_cash_effect for item in queryset)
+
+
+def _current_account_cash_balance(
+    account: Account,
+    *,
+    up_to_date: date | None = None,
+    exclude_cashflow_id: int | None = None,
+    exclude_trade_id: int | None = None,
+) -> int:
+    return (
+        account.initial_balance
+        + _cashflow_effect_total(
+            account,
+            up_to_date=up_to_date,
+            exclude_cashflow_id=exclude_cashflow_id,
+        )
+        + _trade_effect_total(account, up_to_date=up_to_date, exclude_trade_id=exclude_trade_id)
+    )
+
+
+def _calculate_position_from_trades(
+    account: Account,
+    stock: Stock,
+    *,
+    exclude_trade_id: int | None = None,
+    additional_trade: dict | None = None,
+) -> tuple[int, int]:
+    def _trade_sort_key(row):
+        if isinstance(row, dict):
+            return row["traded_on"], row.get("id", 0)
+        return row.traded_on, row.id
+
+    trade_rows = list(
+        Trade.objects.filter(account=account, stock=stock)
+        .exclude(pk=exclude_trade_id)
+        .order_by("traded_on", "id")
+    )
+    if additional_trade:
+        trade_rows.append(additional_trade)
+        trade_rows.sort(key=_trade_sort_key)
+
+    quantity = 0
+    avg_price = 0
+    for row in trade_rows:
+        trade_type = row["trade_type"] if isinstance(row, dict) else row.trade_type
+        trade_quantity = int(row["quantity"] if isinstance(row, dict) else row.quantity)
+        trade_price = int(row["price"] if isinstance(row, dict) else row.price)
+
+        if trade_type == Trade.BUY:
+            new_quantity = quantity + trade_quantity
+            avg_price = int(
+                (
+                    Decimal(quantity * avg_price + trade_quantity * trade_price) / Decimal(new_quantity)
+                ).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            )
+            quantity = new_quantity
+            continue
+
+        if trade_quantity > quantity:
+            raise ValueError("SELL quantity exceeds position")
+        quantity -= trade_quantity
+        if quantity == 0:
+            avg_price = 0
+
+    return quantity, avg_price
+
+
+def _latest_holding_current_price(account: Account, stock: Stock, fallback_price: int) -> int:
+    snapshot = (
+        HoldingSnapshot.objects.filter(account=account, stock=stock)
+        .order_by("-as_of_date", "-id")
+        .first()
+    )
+    return snapshot.current_price if snapshot else fallback_price
+
+
+def _build_unified_activity_rows(today: date) -> list[dict]:
+    accounts = list(Account.objects.order_by("name"))
+    cashflows = list(CashFlow.objects.select_related("account").all())
+    trades = list(Trade.objects.select_related("account", "stock").all())
+
+    cashflows_by_account: dict[int, list[CashFlow]] = {}
+    for entry in cashflows:
+        cashflows_by_account.setdefault(entry.account_id, []).append(entry)
+
+    trades_by_account: dict[int, list[Trade]] = {}
+    for entry in trades:
+        trades_by_account.setdefault(entry.account_id, []).append(entry)
+
+    rows: list[dict] = []
+    for account in accounts:
+        account_cashflows = cashflows_by_account.get(account.id, [])
+        account_trades = trades_by_account.get(account.id, [])
+        first_cashflow_date = min((entry.occurred_on for entry in account_cashflows), default=None)
+        first_trade_date = min((entry.traded_on for entry in account_trades), default=None)
+        candidate_dates = [value for value in [first_cashflow_date, first_trade_date] if value is not None]
+        opened_on = (min(candidate_dates) - timedelta(days=1)) if candidate_dates else today
+
+        timeline: list[dict] = [
+            {
+                "kind": "account",
+                "event_date": opened_on,
+                "event_dt": datetime.combine(opened_on, time.min),
+                "sort_id": account.id,
+                "account": account,
+            }
+        ]
+
+        for entry in account_cashflows:
+            timeline.append(
+                {
+                    "kind": "cashflow",
+                    "event_date": entry.occurred_on,
+                    "event_dt": datetime.combine(entry.occurred_on, time.min),
+                    "sort_id": entry.id,
+                    "entry": entry,
+                }
+            )
+        for entry in account_trades:
+            timeline.append(
+                {
+                    "kind": "trade",
+                    "event_date": entry.traded_on,
+                    "event_dt": datetime.combine(entry.traded_on, time.min),
+                    "sort_id": entry.id,
+                    "entry": entry,
+                }
+            )
+
+        kind_order = {"account": 0, "cashflow": 1, "trade": 2}
+        timeline.sort(
+            key=lambda item: (
+                item["event_date"],
+                kind_order.get(item["kind"], 9),
+                item["sort_id"],
+            )
+        )
+
+        running_balance = 0
+        for item in timeline:
+            kind = item["kind"]
+            if kind == "account":
+                running_balance = account.initial_balance
+                rows.append(
+                    {
+                        "row_type": "account",
+                        "event_date": item["event_date"],
+                        "event_dt": item["event_dt"],
+                        "sort_id": item["sort_id"],
+                        "account_id": account.id,
+                        "account_name": account.name,
+                        "kind_label": "계좌개설",
+                        "quantity": None,
+                        "unit_amount": account.initial_balance,
+                        "cash_balance": running_balance,
+                        "account_group": account.account_group,
+                        "initial_balance": account.initial_balance,
+                    }
+                )
+                continue
+
+            if kind == "cashflow":
+                entry: CashFlow = item["entry"]
+                delta = entry.amount if entry.flow_type == CashFlow.DEPOSIT else -entry.amount
+                running_balance += delta
+                rows.append(
+                    {
+                        "row_type": "cashflow",
+                        "event_date": item["event_date"],
+                        "event_dt": item["event_dt"],
+                        "sort_id": item["sort_id"],
+                        "account_id": entry.account_id,
+                        "account_name": entry.account.name,
+                        "kind_label": entry.get_flow_type_display(),
+                        "quantity": None,
+                        "unit_amount": entry.amount,
+                        "cash_balance": running_balance,
+                        "cashflow_id": entry.id,
+                        "flow_type": entry.flow_type,
+                        "amount": entry.amount,
+                        "memo": entry.memo,
+                    }
+                )
+                continue
+
+            entry = item["entry"]
+            running_balance += entry.net_cash_effect
+            rows.append(
+                {
+                    "row_type": "trade",
+                    "event_date": item["event_date"],
+                    "event_dt": item["event_dt"],
+                    "sort_id": item["sort_id"],
+                    "account_id": entry.account_id,
+                    "account_name": entry.account.name,
+                    "kind_label": entry.get_trade_type_display(),
+                    "quantity": entry.quantity,
+                    "unit_amount": entry.price,
+                    "cash_balance": running_balance,
+                    "trade_id": entry.id,
+                    "stock_id": entry.stock_id,
+                    "stock_ticker": entry.stock.ticker,
+                    "trade_type": entry.trade_type,
+                    "price": entry.price,
+                    "fee": entry.fee,
+                    "tax": entry.tax,
+                    "memo": entry.memo,
+                }
+            )
+
+    rows.sort(key=lambda item: (item["event_date"], item["event_dt"], item["sort_id"]), reverse=True)
+    return rows
 
 
 def _needs_decimal_display(value: Decimal | None, source: str) -> bool:
@@ -190,7 +445,11 @@ def dashboard(request):
         "account_add_form": account_add_form,
         "account_rows": account_rows,
         "recent_cashflows": CashFlow.objects.select_related("account").all()[:10],
+        "cashflow_type_choices": CashFlow.FLOW_TYPES,
         "recent_trades": Trade.objects.select_related("account", "stock").all()[:10],
+        "unified_activity_rows": _build_unified_activity_rows(today),
+        "stocks": Stock.objects.order_by("ticker"),
+        "trade_type_choices": Trade.TRADE_TYPES,
         "accounts": Account.objects.all(),
         "today": today,
         "price_display_date": price_display_date,
@@ -286,8 +545,8 @@ def create_cashflow(request):
         account = form.cleaned_data["account"]
         flow_type = form.cleaned_data["flow_type"]
         amount = int(form.cleaned_data["amount"])
-        latest_snapshot = AccountSnapshot.objects.filter(account=account).order_by("-as_of_date", "-id").first()
-        base_balance = latest_snapshot.cash_balance if latest_snapshot else 0
+        occurred_on = form.cleaned_data["occurred_on"]
+        base_balance = _current_account_cash_balance(account, up_to_date=occurred_on)
         delta = amount if flow_type == CashFlow.DEPOSIT else -amount
         new_balance = base_balance + delta
 
@@ -297,10 +556,11 @@ def create_cashflow(request):
 
         with transaction.atomic():
             form.save()
+            current_balance = _current_account_cash_balance(account)
             AccountSnapshot.objects.update_or_create(
                 account=account,
                 as_of_date=date.today(),
-                defaults={"cash_balance": new_balance},
+                defaults={"cash_balance": current_balance},
             )
         messages.success(request, "입출금 내역과 예수금이 반영되었습니다.")
     else:
@@ -379,15 +639,31 @@ def create_trade(request):
         fee = int(form.cleaned_data["fee"] or 0)
         tax = int(form.cleaned_data["tax"] or 0)
 
+        try:
+            post_trade_cash = _parse_optional_non_negative_int(request.POST.get("post_trade_cash"))
+        except (TypeError, ValueError):
+            messages.error(request, "거래후 예수금은 0 이상의 숫자로 입력해주세요.")
+            return redirect("portfolio:dashboard")
+
         gross_amount = quantity * price
+        if post_trade_cash is not None:
+            base_balance = _current_account_cash_balance(account, up_to_date=form.cleaned_data["traded_on"])
+            tax = 0
+            if trade_type == Trade.BUY:
+                fee = base_balance - gross_amount - post_trade_cash
+            else:
+                fee = base_balance + gross_amount - post_trade_cash
+            if fee < 0:
+                messages.error(request, "거래후 예수금 기준으로 계산한 수수료가 음수입니다. 값을 확인해주세요.")
+                return redirect("portfolio:dashboard")
+
         cash_delta = (
             -(gross_amount + fee + tax)
             if trade_type == Trade.BUY
             else gross_amount - fee - tax
         )
 
-        latest_snapshot = AccountSnapshot.objects.filter(account=account).order_by("-as_of_date", "-id").first()
-        base_balance = latest_snapshot.cash_balance if latest_snapshot else 0
+        base_balance = _current_account_cash_balance(account, up_to_date=form.cleaned_data["traded_on"])
         new_balance = base_balance + cash_delta
 
         if new_balance < 0:
@@ -417,11 +693,15 @@ def create_trade(request):
             new_avg_price = base_avg_price if new_quantity > 0 else 0
 
         with transaction.atomic():
-            form.save()
+            trade_entry = form.save(commit=False)
+            trade_entry.fee = fee
+            trade_entry.tax = tax
+            trade_entry.save()
+            current_balance = _current_account_cash_balance(account)
             AccountSnapshot.objects.update_or_create(
                 account=account,
                 as_of_date=date.today(),
-                defaults={"cash_balance": new_balance},
+                defaults={"cash_balance": current_balance},
             )
             HoldingSnapshot.objects.update_or_create(
                 account=account,
@@ -437,6 +717,251 @@ def create_trade(request):
     else:
         messages.error(request, "거래 내역 저장에 실패했습니다. 값을 확인해주세요.")
     return redirect("portfolio:dashboard")
+
+
+@require_http_methods(["POST"])
+def update_cashflow(request, pk):
+    cashflow = get_object_or_404(CashFlow.objects.select_related("account"), pk=pk)
+    form = CashFlowForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "입출금 내역 수정에 실패했습니다. 값을 확인해주세요.")
+        return redirect("portfolio:dashboard")
+
+    new_account = form.cleaned_data["account"]
+    new_flow_type = form.cleaned_data["flow_type"]
+    new_amount = int(form.cleaned_data["amount"])
+    new_occurred_on = form.cleaned_data["occurred_on"]
+    new_memo = form.cleaned_data["memo"]
+    new_delta = new_amount if new_flow_type == CashFlow.DEPOSIT else -new_amount
+
+    projected_new_balance = _current_account_cash_balance(
+        new_account,
+        up_to_date=new_occurred_on,
+        exclude_cashflow_id=cashflow.id,
+    ) + new_delta
+    if projected_new_balance < 0:
+        messages.error(request, "수정 후 예수금이 음수가 되어 저장할 수 없습니다.")
+        return redirect("portfolio:dashboard")
+
+    old_account = cashflow.account
+    affected_accounts = {
+        old_account.id: old_account,
+        new_account.id: new_account,
+    }
+
+    with transaction.atomic():
+        cashflow.account = new_account
+        cashflow.flow_type = new_flow_type
+        cashflow.amount = new_amount
+        cashflow.occurred_on = new_occurred_on
+        cashflow.memo = new_memo
+        cashflow.save(update_fields=["account", "flow_type", "amount", "occurred_on", "memo"])
+
+        for account in affected_accounts.values():
+            current_balance = _current_account_cash_balance(account)
+            AccountSnapshot.objects.update_or_create(
+                account=account,
+                as_of_date=date.today(),
+                defaults={"cash_balance": current_balance},
+            )
+
+    messages.success(request, "입출금 내역을 수정했습니다.")
+    return redirect("portfolio:dashboard")
+
+
+@require_http_methods(["POST"])
+def update_trade(request, pk):
+    trade = get_object_or_404(Trade.objects.select_related("account", "stock"), pk=pk)
+    form = TradeForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "거래 내역 수정에 실패했습니다. 값을 확인해주세요.")
+        return redirect("portfolio:dashboard")
+
+    new_account = form.cleaned_data["account"]
+    new_stock = form.cleaned_data["stock"]
+    new_trade_type = form.cleaned_data["trade_type"]
+    new_quantity = int(form.cleaned_data["quantity"])
+    new_price = int(form.cleaned_data["price"])
+    new_fee = int(form.cleaned_data["fee"] or 0)
+    new_tax = int(form.cleaned_data["tax"] or 0)
+    new_traded_on = form.cleaned_data["traded_on"]
+    new_memo = form.cleaned_data["memo"]
+
+    try:
+        post_trade_cash = _parse_optional_non_negative_int(request.POST.get("post_trade_cash"))
+    except (TypeError, ValueError):
+        messages.error(request, "거래후 예수금은 0 이상의 숫자로 입력해주세요.")
+        return redirect("portfolio:dashboard")
+
+    old_account = trade.account
+    old_stock = trade.stock
+
+    old_effect = trade.net_cash_effect
+    base_new_account_balance = _current_account_cash_balance(
+        new_account,
+        up_to_date=new_traded_on,
+        exclude_trade_id=trade.pk,
+    )
+
+    if post_trade_cash is not None:
+        new_gross = new_quantity * new_price
+        new_tax = 0
+        if new_trade_type == Trade.BUY:
+            new_fee = base_new_account_balance - new_gross - post_trade_cash
+        else:
+            new_fee = base_new_account_balance + new_gross - post_trade_cash
+        if new_fee < 0:
+            messages.error(request, "거래후 예수금 기준으로 계산한 수수료가 음수입니다. 값을 확인해주세요.")
+            return redirect("portfolio:dashboard")
+
+    new_effect_base = new_quantity * new_price + new_fee + new_tax
+    new_effect = -new_effect_base if new_trade_type == Trade.BUY else (new_quantity * new_price - new_fee - new_tax)
+
+    affected_accounts = {
+        old_account.id: old_account,
+        new_account.id: new_account,
+    }
+    old_projected_balance = _current_account_cash_balance(old_account) - old_effect
+    new_projected_balance = base_new_account_balance + new_effect
+    if old_account.id == new_account.id:
+        old_projected_balance = new_projected_balance
+
+    if old_projected_balance < 0:
+        messages.error(request, f"{old_account.name} 계좌 예수금이 음수가 되어 거래를 수정할 수 없습니다.")
+        return redirect("portfolio:dashboard")
+    if new_projected_balance < 0:
+        messages.error(request, f"{new_account.name} 계좌 예수금이 음수가 되어 거래를 수정할 수 없습니다.")
+        return redirect("portfolio:dashboard")
+
+    replacement_trade = {
+        "id": trade.pk,
+        "trade_type": new_trade_type,
+        "quantity": new_quantity,
+        "price": new_price,
+        "traded_on": new_traded_on,
+    }
+    affected_pairs = {
+        (old_account.id, old_stock.id): (old_account, old_stock, None),
+        (new_account.id, new_stock.id): (new_account, new_stock, replacement_trade),
+    }
+
+    projected_positions: dict[tuple[int, int], tuple[int, int, int]] = {}
+    for key, pair in affected_pairs.items():
+        account, stock, additional_trade = pair
+        try:
+            projected_quantity, projected_avg_price = _calculate_position_from_trades(
+                account=account,
+                stock=stock,
+                exclude_trade_id=trade.pk,
+                additional_trade=additional_trade,
+            )
+        except ValueError:
+            messages.error(request, "매도 수량이 보유 수량보다 많아 거래를 수정할 수 없습니다.")
+            return redirect("portfolio:dashboard")
+        current_price = _latest_holding_current_price(account, stock, fallback_price=new_price)
+        projected_positions[key] = (projected_quantity, projected_avg_price, current_price)
+
+    with transaction.atomic():
+        trade.account = new_account
+        trade.stock = new_stock
+        trade.trade_type = new_trade_type
+        trade.quantity = new_quantity
+        trade.price = new_price
+        trade.fee = new_fee
+        trade.tax = new_tax
+        trade.traded_on = new_traded_on
+        trade.memo = new_memo
+        trade.save(
+            update_fields=[
+                "account",
+                "stock",
+                "trade_type",
+                "quantity",
+                "price",
+                "fee",
+                "tax",
+                "traded_on",
+                "memo",
+            ]
+        )
+
+        for account in affected_accounts.values():
+            updated_balance = _current_account_cash_balance(account)
+            AccountSnapshot.objects.update_or_create(
+                account=account,
+                as_of_date=date.today(),
+                defaults={"cash_balance": updated_balance},
+            )
+
+        for (account_id, stock_id), values in projected_positions.items():
+            quantity, avg_price, current_price = values
+            HoldingSnapshot.objects.update_or_create(
+                account_id=account_id,
+                stock_id=stock_id,
+                as_of_date=date.today(),
+                defaults={
+                    "quantity": quantity,
+                    "avg_price": avg_price,
+                    "current_price": current_price,
+                },
+            )
+
+    messages.success(request, "거래 내역을 수정했습니다.")
+    return redirect("portfolio:dashboard")
+
+
+@require_http_methods(["GET"])
+def preview_trade_fee(request):
+    account_id = request.GET.get("account")
+    trade_type = (request.GET.get("trade_type") or "").strip()
+    quantity_raw = request.GET.get("quantity")
+    price_raw = request.GET.get("price")
+    traded_on_raw = request.GET.get("traded_on")
+    post_trade_cash_raw = request.GET.get("post_trade_cash")
+    exclude_trade_id_raw = request.GET.get("exclude_trade_id")
+
+    try:
+        account = Account.objects.get(pk=int(account_id))
+        quantity = int(quantity_raw or "0")
+        price = int(price_raw or "0")
+        traded_on = date.fromisoformat(traded_on_raw or "")
+        post_trade_cash = _parse_optional_non_negative_int(post_trade_cash_raw)
+        exclude_trade_id = int(exclude_trade_id_raw) if exclude_trade_id_raw else None
+    except (Account.DoesNotExist, TypeError, ValueError):
+        return JsonResponse({"ok": False, "message": "입력값이 올바르지 않습니다."}, status=400)
+
+    if trade_type not in {Trade.BUY, Trade.SELL}:
+        return JsonResponse({"ok": False, "message": "거래 구분이 올바르지 않습니다."}, status=400)
+    if quantity <= 0 or price <= 0:
+        return JsonResponse({"ok": False, "message": "수량/단가는 1 이상이어야 합니다."}, status=400)
+    if post_trade_cash is None:
+        return JsonResponse({"ok": False, "message": "거래후 예수금을 입력해주세요."}, status=400)
+
+    base_balance = _current_account_cash_balance(
+        account,
+        up_to_date=traded_on,
+        exclude_trade_id=exclude_trade_id,
+    )
+    gross_amount = quantity * price
+    if trade_type == Trade.BUY:
+        fee = base_balance - gross_amount - post_trade_cash
+    else:
+        fee = base_balance + gross_amount - post_trade_cash
+
+    if fee < 0:
+        return JsonResponse(
+            {"ok": False, "message": "계산된 수수료가 음수입니다. 거래후 예수금을 확인해주세요."},
+            status=400,
+        )
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "fee": fee,
+            "base_cash_balance": base_balance,
+            "traded_on": traded_on.isoformat(),
+        }
+    )
 
 
 @require_http_methods(["POST"])
