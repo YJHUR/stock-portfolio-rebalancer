@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "portfolios": [
+    {
+      "id": "default",
+      "name": "기본 포트폴리오",
+      "db_path": "db.sqlite3",
+      "created_at": "2026-07-09T07:59:09.705817+00:00"
+    },
+    {
+      "id": "보조-포트폴리오-2",
+      "name": "보조 포트폴리오",
+      "db_path": "data/portfolios/보조-포트폴리오-2.sqlite3",
+      "created_at": "2026-07-09T07:59:46.916649+00:00"
+    }
+  ]
+}

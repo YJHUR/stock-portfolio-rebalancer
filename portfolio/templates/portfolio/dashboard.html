@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+{% load humanize %}
+<html lang="ko">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stock Portfolio Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg: #f7f8fc;
+            --card: #ffffff;
+            --line: #dbe2ef;
+            --ink: #1f2937;
+            --sub: #5f6b7a;
+            --accent: #2f6fed;
+            --good: #1f6fff;
+            --bad: #da3344;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Noto Sans KR", "Segoe UI", sans-serif;
+            background: var(--bg);
+            color: var(--ink);
+        }
+        .container {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 16px;
+            display: grid;
+            gap: 12px;
+        }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            padding: 14px;
+        }
+        h1, h2 { margin: 0 0 10px; }
+        h1 { font-size: 1.2rem; }
+        h2 { font-size: 1rem; }
+        .app-title {
+            font-size: 1.55rem;
+            font-weight: 800;
+            margin-bottom: 6px;
+            letter-spacing: -0.01em;
+        }
+        .asof-date {
+            font-size: 0.78rem;
+            color: var(--sub);
+            margin: 0 0 10px;
+        }
+        .portfolio-nav-wrap {
+            display: grid;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .portfolio-tabs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .portfolio-tab-form {
+            margin: 0;
+        }
+        .portfolio-tab-btn {
+            background: #eef3ff;
+            color: #2446a6;
+            border: 1px solid #c9d7ff;
+            border-radius: 999px;
+            padding: 5px 10px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .portfolio-tab-btn.active {
+            background: #2f6fed;
+            border-color: #2f6fed;
+            color: #fff;
+        }
+        .portfolio-tools {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
+        }
+        .portfolio-inline-form {
+            display: inline-flex;
+            gap: 6px;
+            align-items: center;
+            margin: 0;
+        }
+        .portfolio-name-input {
+            width: 160px;
+            padding: 6px 8px;
+            border-radius: 8px;
+            border: 1px solid var(--line);
+            font-size: 0.82rem;
+        }
+        .kpis {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+        .kpi {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 10px;
+        }
+        .label { color: var(--sub); font-size: 0.82rem; }
+        .value { font-size: 1.05rem; font-weight: 700; margin-top: 4px; }
+        .good { color: var(--good); }
+        .bad { color: var(--bad); }
+        .section-grid {
+            display: grid;
+            gap: 12px;
+        }
+        .form-grid {
+            display: grid;
+            gap: 8px;
+        }
+        .inline-create-form {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 110px auto;
+            gap: 8px;
+            align-items: end;
+        }
+        .inline-stock-form {
+            display: grid;
+            grid-template-columns: minmax(120px, 0.9fr) minmax(90px, 0.7fr) minmax(220px, 1.8fr) minmax(110px, 0.8fr) minmax(90px, auto);
+            gap: 8px;
+            align-items: end;
+        }
+        .inline-stock-form > * {
+            min-width: 0;
+        }
+        .inline-stock-form input[name="stock_name"] {
+            min-width: 220px;
+        }
+        .inline-stock-form button {
+            white-space: nowrap;
+            min-width: 90px;
+            height: 40px;
+            align-self: end;
+        }
+        .form-grid input, .form-grid select, .form-grid textarea {
+            width: 100%;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--line);
+            font-size: 0.9rem;
+        }
+        .inline-create-form input {
+            width: 100%;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--line);
+            font-size: 0.9rem;
+        }
+        .inline-stock-form input, .inline-stock-form select {
+            width: 100%;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--line);
+            font-size: 0.9rem;
+        }
+        .inline-category-form {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .inline-category-select {
+            min-width: 120px;
+            padding: 4px 6px;
+            border-radius: 6px;
+            border: 1px solid var(--line);
+            font-size: 0.78rem;
+            background: #fff;
+        }
+        button {
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            font-weight: 700;
+            cursor: pointer;
+            width: auto;
+            padding: 8px 12px;
+            border-radius: 8px;
+        }
+        .form-grid button { width: 100%; }
+        .btn-inline {
+            width: auto;
+            padding: 4px 8px;
+            font-size: 0.78rem;
+            border-radius: 6px;
+        }
+        .inline-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .inline-weight-form {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .inline-number {
+            width: 78px;
+            padding: 4px 6px;
+            border-radius: 6px;
+            border: 1px solid var(--line);
+            font-size: 0.78rem;
+        }
+        .inline-percent-field {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .unit-badge {
+            font-size: 0.78rem;
+            color: var(--sub);
+            min-width: 10px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.84rem;
+        }
+        th, td {
+            border-bottom: 1px solid var(--line);
+            text-align: left;
+            padding: 8px 6px;
+            white-space: nowrap;
+        }
+        .muted { color: var(--sub); }
+        .hint-text {
+            color: var(--sub);
+            font-size: 0.78rem;
+            margin: 0 0 8px;
+        }
+        .hint-text.good { color: var(--good); }
+        .hint-text.bad { color: var(--bad); }
+        .messages { margin: 0; padding: 0; list-style: none; }
+        .messages li {
+            border-radius: 8px;
+            padding: 8px 10px;
+            margin-bottom: 6px;
+            font-size: 0.85rem;
+        }
+        .messages .success { background: #eaf9f2; color: #0d7d54; }
+        .messages .error { background: #fdecef; color: #9e1f2d; }
+        .reverse-colors .good { color: var(--bad); }
+        .reverse-colors .bad { color: var(--good); }
+        .warning-banner {
+            background: #fff5e8;
+            color: #9a3f00;
+            border: 1px solid #ffd2a8;
+            border-radius: 8px;
+            padding: 8px 10px;
+            margin: 0 0 8px;
+            font-size: 0.82rem;
+        }
+        .tag {
+            display: inline-block;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            padding: 2px 8px;
+            font-size: 0.72rem;
+            color: var(--sub);
+            margin-right: 4px;
+        }
+        .inline-price-form {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .inline-price-input {
+            width: 120px;
+            padding: 4px 6px;
+            border-radius: 6px;
+            border: 1px solid var(--line);
+            font-size: 0.78rem;
+        }
+        .group-block {
+            margin-top: 14px;
+            padding-top: 10px;
+            border-top: 1px dashed var(--line);
+        }
+        .group-block:first-of-type {
+            margin-top: 0;
+            padding-top: 0;
+            border-top: none;
+        }
+        .account-block {
+            margin-top: 14px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(219, 226, 239, 0.8);
+        }
+        .account-block:first-of-type {
+            margin-top: 0;
+            padding-top: 0;
+            border-top: none;
+        }
+        .account-add-form {
+            display: grid;
+            grid-template-columns: 150px minmax(0, 1fr) 140px auto;
+            gap: 8px;
+            align-items: end;
+            margin-bottom: 8px;
+        }
+        .account-add-form .field-wrap input,
+        .account-add-form .field-wrap select {
+            width: 100%;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--line);
+            font-size: 0.9rem;
+        }
+        .account-edit-form {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .account-group-select {
+            width: 128px;
+            padding: 4px 6px;
+            border-radius: 6px;
+            border: 1px solid var(--line);
+            font-size: 0.78rem;
+            background: #fff;
+        }
+        .account-name-input {
+            width: 170px;
+            padding: 4px 6px;
+            border-radius: 6px;
+            border: 1px solid var(--line);
+            font-size: 0.78rem;
+        }
+        .account-cash-input {
+            width: 110px;
+            padding: 4px 6px;
+            border-radius: 6px;
+            border: 1px solid var(--line);
+            font-size: 0.78rem;
+        }
+        .compact-field-label {
+            display: block;
+            color: var(--sub);
+            font-size: 0.74rem;
+            margin-bottom: 4px;
+        }
+        .cashflow-row-top {
+            display: grid;
+            grid-template-columns: 1.2fr 0.9fr 0.8fr 0.9fr;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .cashflow-row-bottom {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 8px;
+            align-items: end;
+            margin-bottom: 8px;
+        }
+        .trade-row-1 {
+            display: grid;
+            grid-template-columns: 1fr 1.6fr;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .trade-row-2 {
+            display: grid;
+            grid-template-columns: 0.9fr 0.7fr 1fr 1fr;
+            gap: 8px;
+            align-items: end;
+            margin-bottom: 8px;
+        }
+        .trade-row-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            align-items: end;
+            margin-bottom: 8px;
+        }
+        .trade-row-4 {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 8px;
+            align-items: end;
+            margin-bottom: 8px;
+        }
+        .cashflow-row-top input,
+        .cashflow-row-top select,
+        .cashflow-row-bottom input,
+        .cashflow-row-bottom select,
+        .cashflow-row-bottom textarea,
+        .trade-row-1 input,
+        .trade-row-1 select,
+        .trade-row-2 input,
+        .trade-row-2 select,
+        .trade-row-3 input,
+        .trade-row-3 select,
+        .trade-row-4 input,
+        .trade-row-4 select,
+        .trade-row-4 textarea {
+            width: 100%;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--line);
+            font-size: 0.9rem;
+        }
+
+        @media (min-width: 800px) {
+            .section-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+            .rebalance-grid {
+                grid-template-columns: 0.85fr 1.15fr;
+            }
+            .kpis {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
+        }
+        @media (max-width: 640px) {
+            .cashflow-row-top {
+                grid-template-columns: 1fr 1fr;
+            }
+            .trade-row-1 {
+                grid-template-columns: 1fr 1fr;
+            }
+            .trade-row-2 {
+                grid-template-columns: 1fr 1fr;
+            }
+            .trade-row-3 {
+                grid-template-columns: 1fr 1fr;
+            }
+            .trade-row-4 {
+                grid-template-columns: 1fr 1fr;
+            }
+            .account-add-form {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+<main class="container">
+    <section class="card">
+        <h1 class="app-title">포트폴리오 대시보드</h1>
+        {% if active_portfolio %}
+            <div class="portfolio-nav-wrap">
+                <div class="portfolio-tabs">
+                    {% for portfolio in portfolio_list %}
+                        <form action="{% url 'portfolio:select_portfolio' portfolio.id %}" method="post" class="portfolio-tab-form">
+                            {% csrf_token %}
+                            <button
+                                type="submit"
+                                class="portfolio-tab-btn{% if active_portfolio.id == portfolio.id %} active{% endif %}"
+                            >
+                                {{ portfolio.name }}
+                            </button>
+                        </form>
+                    {% endfor %}
+                </div>
+                <div class="portfolio-tools">
+                    <form action="{% url 'portfolio:create_portfolio' %}" method="post" class="portfolio-inline-form">
+                        {% csrf_token %}
+                        <input
+                            type="text"
+                            name="portfolio_name"
+                            class="portfolio-name-input"
+                            value=""
+                            placeholder="새 포트폴리오 이름"
+                            required
+                        />
+                        <button type="submit" class="btn-inline">생성</button>
+                    </form>
+                    <form action="{% url 'portfolio:update_portfolio' active_portfolio.id %}" method="post" class="portfolio-inline-form">
+                        {% csrf_token %}
+                        <input
+                            type="text"
+                            name="portfolio_name"
+                            class="portfolio-name-input"
+                            value="{{ active_portfolio.name }}"
+                            required
+                        />
+                        <button type="submit" class="btn-inline">이름변경</button>
+                    </form>
+                    <form action="{% url 'portfolio:delete_portfolio' active_portfolio.id %}" method="post" class="portfolio-inline-form">
+                        {% csrf_token %}
+                        <button type="submit" class="btn-inline">삭제</button>
+                    </form>
+                </div>
+            </div>
+        {% endif %}
+        <p class="asof-date">기준일: {{ latest_holding_date|default:"데이터 없음" }}</p>
+        {% if messages %}
+            <ul class="messages">
+                {% for message in messages %}
+                    <li class="{{ message.tags }}">{{ message }}</li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+        <div class="kpis">
+            <div class="kpi"><div class="label">투자금</div><div class="value">{{ totals.investment_total|intcomma }}</div></div>
+            <div class="kpi"><div class="label">예수금</div><div class="value">{{ totals.cash_total|intcomma }}</div></div>
+            <div class="kpi"><div class="label">평가 금액</div><div class="value">{{ totals.market_total|intcomma }}</div></div>
+            <div class="kpi">
+                <div class="label">수익률</div>
+                <div class="value {% if totals.return_rate >= 0 %}good{% else %}bad{% endif %}">
+                    {{ totals.return_rate }}%
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="card reverse-colors">
+        <h2>카테고리 비중</h2>
+        <canvas id="categoryChart"></canvas>
+        <table>
+            <thead>
+            <tr>
+                <th>카테고리</th><th>현재비중</th><th>목표비중</th><th>현재금액</th><th>목표금액</th><th>차액</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for row in category_rebalance_rows %}
+                <tr>
+                    <td>{{ row.name }}</td>
+                    <td>{{ row.current_ratio }}%</td>
+                    <td>{{ row.target_ratio }}%</td>
+                    <td>{{ row.current_value|intcomma }}</td>
+                    <td>{{ row.target_value|intcomma }}</td>
+                    <td class="{% if row.gap_value >= 0 %}good{% else %}bad{% endif %}">
+                        {{ row.gap_value|intcomma }}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="card">
+        <h2>리밸런싱 리스트 관리</h2>
+        <p class="muted">리밸런싱 대상은 추가/삭제로 관리되며, 리스트에 있는 항목만 계산에 사용됩니다.</p>
+        <div class="section-grid rebalance-grid">
+            <article>
+                <h3 style="margin: 0 0 8px;">카테고리 설정</h3>
+                {% if not is_target_weight_total_valid %}
+                    <p class="warning-banner">
+                        목표비중 합계가 100%가 아닙니다. (현재 {{ target_weight_total }}%)
+                        수정 중일 수 있으니 저장은 허용됩니다.
+                    </p>
+                {% endif %}
+                <form action="{% url 'portfolio:add_rebalance_category' %}" method="post" class="inline-create-form" style="margin-bottom: 8px;">
+                    {% csrf_token %}
+                    {{ category_add_form.category_name }}
+                    {{ category_add_form.target_weight }}
+                    <button type="submit">카테고리 추가</button>
+                </form>
+                <table>
+                    <thead><tr><th>카테고리</th><th>목표비중(%)</th><th>삭제</th></tr></thead>
+                    <tbody>
+                    {% for row in rebalance_categories %}
+                        <tr>
+                            <td>{{ row.category.name }}</td>
+                            <td>
+                                <form action="{% url 'portfolio:update_rebalance_category' row.id %}" method="post" class="inline-weight-form">
+                                    {% csrf_token %}
+                                    <label class="inline-percent-field">
+                                        <input
+                                            type="number"
+                                            name="target_weight"
+                                            min="0"
+                                            max="100"
+                                            step="0.01"
+                                            value="{{ row.target_weight }}"
+                                            class="inline-number"
+                                        />
+                                        <span class="unit-badge">%</span>
+                                    </label>
+                                    <button type="submit" class="btn-inline">수정</button>
+                                </form>
+                            </td>
+                            <td>
+                                <form action="{% url 'portfolio:delete_rebalance_category' row.id %}" method="post">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn-inline">삭제</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="3">등록된 카테고리가 없습니다.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                <h3 style="margin: 12px 0 8px;">최근 비중 변경 이력</h3>
+                <table>
+                    <thead><tr><th>시각</th><th>카테고리</th><th>변경</th><th>구분</th></tr></thead>
+                    <tbody>
+                    {% for row in recent_rebalance_category_histories %}
+                        <tr>
+                            <td>{{ row.changed_at|date:"Y-m-d H:i" }}</td>
+                            <td>{{ row.category.name }}</td>
+                            <td>
+                                {% if row.old_weight is not None %}
+                                    {{ row.old_weight }}% → {{ row.new_weight }}%
+                                {% else %}
+                                    - → {{ row.new_weight }}%
+                                {% endif %}
+                            </td>
+                            <td>{{ row.get_change_type_display }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="4">변경 이력이 없습니다.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </article>
+            <article>
+                <h3 style="margin: 0 0 8px;">종목 리스트 설정</h3>
+                {% if not is_stock_target_weight_total_valid %}
+                    <p class="warning-banner">
+                        종목 목표비중 합계가 100%가 아닙니다. (현재 {{ stock_target_weight_total }}%)
+                        수정 중일 수 있으니 저장은 허용됩니다.
+                    </p>
+                {% endif %}
+                <form action="{% url 'portfolio:add_rebalance_stock' %}" method="post" class="inline-stock-form" style="margin-bottom: 8px;">
+                    {% csrf_token %}
+                    {{ stock_add_form.rebalance_category }}
+                    {{ stock_add_form.ticker }}
+                    {{ stock_add_form.stock_name }}
+                    {{ stock_add_form.target_weight }}
+                    <button type="submit">종목 추가</button>
+                </form>
+                <p id="tickerLookupHint" class="hint-text">티커 입력 후 다른 칸으로 이동하면 종목명을 자동 조회합니다.</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>카테고리</th>
+                            <th>종목</th>
+                            <th>종목목표비중(%)</th>
+                            <th>
+                                관리
+                                <form action="{% url 'portfolio:equalize_all_rebalance_stocks' %}" method="post" style="display: inline; margin-left: 6px;">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn-inline">균등</button>
+                                </form>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for row in rebalance_stocks %}
+                        <tr>
+                            <td>
+                                <select name="rebalance_category" class="inline-category-select" form="reb-stock-update-{{ row.id }}">
+                                    {% for category_entry in rebalance_categories %}
+                                        <option value="{{ category_entry.id }}" {% if category_entry.id == row.rebalance_category_id %}selected{% endif %}>
+                                            {{ category_entry.category.name }}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td>{{ row.stock.ticker }} {{ row.stock.name }}</td>
+                            <td>
+                                <input
+                                    type="number"
+                                    name="target_weight"
+                                    min="0"
+                                    max="100"
+                                    step="0.01"
+                                    value="{{ row.target_weight }}"
+                                    class="inline-number"
+                                    form="reb-stock-update-{{ row.id }}"
+                                />
+                            </td>
+                            <td>
+                                <form id="reb-stock-update-{{ row.id }}" action="{% url 'portfolio:update_rebalance_stock' row.id %}" method="post" style="display: inline;">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn-inline">수정</button>
+                                </form>
+                                <form action="{% url 'portfolio:delete_rebalance_stock' row.id %}" method="post" style="display: inline;">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn-inline">삭제</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="4">등록된 종목이 없습니다.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                <h3 style="margin: 12px 0 8px;">최근 포트폴리오 종목 변경 이력</h3>
+                <table>
+                    <thead><tr><th>시각</th><th>종목</th><th>변경</th><th>구분</th></tr></thead>
+                    <tbody>
+                    {% for row in recent_rebalance_stock_histories %}
+                        <tr>
+                            <td>{{ row.changed_at|date:"Y-m-d H:i" }}</td>
+                            <td>{{ row.ticker }} {{ row.stock_name }}</td>
+                            <td>
+                                {% if row.old_category_name %}
+                                    {{ row.old_category_name }} → {{ row.new_category_name|default:"-" }}
+                                {% else %}
+                                    - → {{ row.new_category_name|default:"-" }}
+                                {% endif %}
+                            </td>
+                            <td>{{ row.get_change_type_display }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="4">변경 이력이 없습니다.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </article>
+        </div>
+    </section>
+
+    <section class="card">
+        <h2>오늘 종가 현황판 (직전 영업일 대비)</h2>
+        <p class="muted" style="margin: 0 0 8px;">
+            기준일 {{ price_display_date }}{% if is_market_open %} (장중 실시간){% else %} (장전/휴장: 직전 영업일 종가 기준){% endif %}
+        </p>
+        <table>
+            <thead>
+            <tr>
+                <th>종목</th><th>카테고리</th><th>대상</th><th>오늘 종가</th><th>직전 영업일</th><th>증감</th><th>증감률</th><th>수동 입력</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for row in price_board_rows %}
+                <tr>
+                    <td>{{ row.stock.ticker }} {{ row.stock.name|default:"(이름 없음)" }}</td>
+                    <td>{{ row.stock.category.name }}</td>
+                    <td>
+                        {% if row.in_holdings %}<span class="tag">보유 종목</span>{% endif %}
+                        {% if row.in_rebalance %}<span class="tag">종목 리스트</span>{% endif %}
+                    </td>
+                    <td>
+                        {% if row.today_price is not None %}
+                            {% if row.today_needs_decimal %}
+                                {{ row.today_price|floatformat:4|intcomma }}
+                            {% else %}
+                                {{ row.today_price|floatformat:0|intcomma }}
+                            {% endif %}
+                            <span class="muted">({{ row.today_source }})</span>
+                        {% else %}
+                            <span class="bad">미수집</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if row.prev_price is not None %}
+                            {% if row.prev_needs_decimal %}
+                                {{ row.prev_price|floatformat:4|intcomma }}
+                            {% else %}
+                                {{ row.prev_price|floatformat:0|intcomma }}
+                            {% endif %}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td class="{% if row.change_value is not None and row.change_value >= 0 %}good{% elif row.change_value is not None %}bad{% endif %}">
+                        {% if row.change_value is not None %}
+                            {% if row.change_needs_decimal %}
+                                {{ row.change_value|floatformat:4|intcomma }}
+                            {% else %}
+                                {{ row.change_value|floatformat:0|intcomma }}
+                            {% endif %}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td class="{% if row.change_rate is not None and row.change_rate >= 0 %}good{% elif row.change_rate is not None %}bad{% endif %}">
+                        {% if row.change_rate is not None %}
+                            {{ row.change_rate }}%
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if row.needs_manual %}
+                            <form action="{% url 'portfolio:upsert_manual_price' %}" method="post" class="inline-price-form">
+                                {% csrf_token %}
+                                <input type="hidden" name="stock" value="{{ row.stock.id }}" />
+                                <input type="hidden" name="price_date" value="{{ price_display_date|date:'Y-m-d' }}" />
+                                <input
+                                    type="number"
+                                    name="close_price"
+                                    min="0.0001"
+                                    step="0.0001"
+                                    required
+                                    class="inline-price-input"
+                                    placeholder="종가 입력"
+                                />
+                                <button type="submit" class="btn-inline">저장</button>
+                            </form>
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="8">현황 대상 종목이 없습니다.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="card reverse-colors">
+        <h2>그룹별 계좌상태 및 리밸런싱 추천</h2>
+        {% for group in grouped_account_status %}
+            <div class="group-block">
+                <h3 style="margin: 12px 0 8px;">{{ group.group_name }}</h3>
+                <p class="muted" style="margin: 0 0 8px;">
+                    평가금액 {{ group.market_total|intcomma }} / 예수금총합 {{ group.cash_total|intcomma }} / 전체자산 {{ group.total_assets|intcomma }}
+                </p>
+                <table style="margin-bottom: 10px;">
+                    <thead>
+                    <tr>
+                        <th>카테고리</th><th>현재비중</th><th>목표비중</th><th>현재금액</th><th>목표금액</th><th>리밸런싱</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for row in group.category_rows %}
+                        <tr>
+                            <td>{{ row.category }}</td>
+                            <td>{{ row.current_ratio }}%</td>
+                            <td>{{ row.target_ratio }}%</td>
+                            <td>{{ row.current_value|intcomma }}</td>
+                            <td>{{ row.target_value|intcomma }}</td>
+                            <td class="{% if row.gap_value >= 0 %}good{% else %}bad{% endif %}">
+                                {{ row.gap_value|intcomma }}
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="6">카테고리 리밸런싱 데이터가 없습니다.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% for account in group.account_rows %}
+                    <div class="account-block">
+                        <h4 style="margin: 8px 0 6px;">{{ account.account_name }}</h4>
+                        <p class="muted" style="margin: 0 0 8px;">예수금 {{ account.cash_balance|intcomma }}</p>
+                        <table style="margin-bottom: 10px;">
+                            <thead>
+                            <tr>
+                                <th>계좌</th><th>카테고리</th><th>종목</th><th>수량</th><th>매입가</th><th>현재가</th><th>평가금액</th><th>리밸런싱 추천(+/-몇주)</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {% for row in account.holding_rows %}
+                                <tr>
+                                    <td>{{ account.account_name }}</td>
+                                    <td>{{ row.category }}</td>
+                                    <td>{{ row.ticker }} {{ row.stock_name }}</td>
+                                    <td>{{ row.quantity|intcomma }}</td>
+                                    <td>{{ row.avg_price|intcomma }}</td>
+                                    <td>{{ row.current_price|intcomma }}</td>
+                                    <td>{{ row.market_value|intcomma }}</td>
+                                    <td class="{% if row.recommendation_shares > 0 %}good{% elif row.recommendation_shares < 0 %}bad{% endif %}">
+                                        {% if row.recommendation_shares > 0 %}
+                                            +{{ row.recommendation_shares|intcomma }}주
+                                        {% elif row.recommendation_shares < 0 %}
+                                            {{ row.recommendation_shares|intcomma }}주
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% empty %}
+                                <tr><td colspan="8">보유/추천 데이터가 없습니다.</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                        <p class="muted" style="margin: -2px 0 10px;">
+                            리밸런싱 후 예상 예수금 {{ account.expected_cash_balance|intcomma }}
+                        </p>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endfor %}
+    </section>
+
+    <section class="section-grid">
+        <article class="card">
+            <h2>입출금 내역 입력</h2>
+            <form action="{% url 'portfolio:create_cashflow' %}" method="post">
+                {% csrf_token %}
+                <div class="cashflow-row-top">
+                    <div>
+                        <label for="{{ cashflow_form.account.id_for_label }}" class="compact-field-label">Account</label>
+                        {{ cashflow_form.account }}
+                    </div>
+                    <div>
+                        <label for="{{ cashflow_form.flow_type.id_for_label }}" class="compact-field-label">Flow</label>
+                        {{ cashflow_form.flow_type }}
+                    </div>
+                    <div>
+                        <label for="{{ cashflow_form.amount.id_for_label }}" class="compact-field-label">Amount</label>
+                        {{ cashflow_form.amount }}
+                    </div>
+                    <div>
+                        <label for="{{ cashflow_form.occurred_on.id_for_label }}" class="compact-field-label">Date</label>
+                        {{ cashflow_form.occurred_on }}
+                    </div>
+                </div>
+                <div class="cashflow-row-bottom">
+                    <div>
+                        <label for="{{ cashflow_form.memo.id_for_label }}" class="compact-field-label">Memo</label>
+                        {{ cashflow_form.memo }}
+                    </div>
+                    <button type="submit">저장</button>
+                </div>
+            </form>
+            <h2>최근 입출금</h2>
+            <table>
+                <thead><tr><th>일자</th><th>계좌</th><th>구분</th><th>금액</th></tr></thead>
+                <tbody>
+                {% for row in recent_cashflows %}
+                    <tr>
+                        <td>{{ row.occurred_on }}</td>
+                        <td>{{ row.account.name }}</td>
+                        <td>{{ row.get_flow_type_display }}</td>
+                        <td>{{ row.amount|intcomma }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="4">내역 없음</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </article>
+        <article class="card">
+            <h2>거래 내역 입력</h2>
+            <form action="{% url 'portfolio:create_trade' %}" method="post">
+                {% csrf_token %}
+                <div class="trade-row-1">
+                    <div>
+                        <label for="{{ trade_form.account.id_for_label }}" class="compact-field-label">Account</label>
+                        {{ trade_form.account }}
+                    </div>
+                    <div>
+                        <label for="{{ trade_form.stock.id_for_label }}" class="compact-field-label">Stock</label>
+                        {{ trade_form.stock }}
+                    </div>
+                </div>
+                <div class="trade-row-2">
+                    <div>
+                        <label for="{{ trade_form.trade_type.id_for_label }}" class="compact-field-label">Type</label>
+                        {{ trade_form.trade_type }}
+                    </div>
+                    <div>
+                        <label for="{{ trade_form.quantity.id_for_label }}" class="compact-field-label">Qty</label>
+                        {{ trade_form.quantity }}
+                    </div>
+                    <div>
+                        <label for="{{ trade_form.price.id_for_label }}" class="compact-field-label">Price</label>
+                        {{ trade_form.price }}
+                    </div>
+                    <div>
+                        <label for="{{ trade_form.traded_on.id_for_label }}" class="compact-field-label">Date</label>
+                        {{ trade_form.traded_on }}
+                    </div>
+                </div>
+                <div class="trade-row-3">
+                    <div>
+                        <label for="{{ trade_form.fee.id_for_label }}" class="compact-field-label">Fee</label>
+                        {{ trade_form.fee }}
+                    </div>
+                    <div>
+                        <label for="{{ trade_form.tax.id_for_label }}" class="compact-field-label">Tax</label>
+                        {{ trade_form.tax }}
+                    </div>
+                </div>
+                <div class="trade-row-4">
+                    <div>
+                        <label for="{{ trade_form.memo.id_for_label }}" class="compact-field-label">Memo</label>
+                        {{ trade_form.memo }}
+                    </div>
+                    <button type="submit">저장</button>
+                </div>
+            </form>
+            <h2>최근 거래</h2>
+            <table>
+                <thead><tr><th>일자</th><th>계좌</th><th>종목</th><th>구분</th><th>수량</th><th>단가</th></tr></thead>
+                <tbody>
+                {% for row in recent_trades %}
+                    <tr>
+                        <td>{{ row.traded_on }}</td>
+                        <td>{{ row.account.name }}</td>
+                        <td>{{ row.stock.ticker }}</td>
+                        <td>{{ row.get_trade_type_display }}</td>
+                        <td>{{ row.quantity|intcomma }}</td>
+                        <td>{{ row.price|intcomma }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="6">내역 없음</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </article>
+    </section>
+
+    <section class="card">
+        <h2>계좌 관리</h2>
+        <form action="{% url 'portfolio:create_account' %}" method="post" class="account-add-form">
+            {% csrf_token %}
+            <div class="field-wrap">
+                <label for="{{ account_add_form.account_group.id_for_label }}" class="compact-field-label">Account Group</label>
+                {{ account_add_form.account_group }}
+            </div>
+            <div class="field-wrap">
+                <label for="{{ account_add_form.account_name.id_for_label }}" class="compact-field-label">Account Name</label>
+                {{ account_add_form.account_name }}
+            </div>
+            <div class="field-wrap">
+                <label for="{{ account_add_form.cash_balance.id_for_label }}" class="compact-field-label">Initial Deposit</label>
+                {{ account_add_form.cash_balance }}
+            </div>
+            <button type="submit">계좌 추가</button>
+        </form>
+        <table>
+            <thead>
+            <tr><th>그룹</th><th>계좌명</th><th>최초입금</th><th>관리</th></tr>
+            </thead>
+            <tbody>
+            {% for row in account_rows %}
+                <tr>
+                    <td>
+                        <input
+                            type="text"
+                            name="account_group"
+                            value="{{ row.account.account_group }}"
+                            class="account-group-select"
+                            form="acct-update-{{ row.account.id }}"
+                            required
+                        />
+                    </td>
+                    <td>
+                        <input
+                            type="text"
+                            name="account_name"
+                            value="{{ row.account.name }}"
+                            class="account-name-input"
+                            form="acct-update-{{ row.account.id }}"
+                            required
+                        />
+                    </td>
+                    <td>
+                        <input
+                            type="number"
+                            name="initial_balance"
+                            min="0"
+                            step="1"
+                            value="{{ row.initial_balance }}"
+                            class="account-cash-input"
+                            form="acct-update-{{ row.account.id }}"
+                            required
+                        />
+                    </td>
+                    <td>
+                        <form id="acct-update-{{ row.account.id }}" action="{% url 'portfolio:update_account' row.account.id %}" method="post" style="display: inline;">
+                            {% csrf_token %}
+                            <button type="submit" class="btn-inline">수정</button>
+                        </form>
+                        <form action="{% url 'portfolio:delete_account' row.account.id %}" method="post" style="display: inline;">
+                            {% csrf_token %}
+                            <button type="submit" class="btn-inline">삭제</button>
+                        </form>
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="4">등록된 계좌가 없습니다.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</main>
+
+<script>
+    const labels = [{% for row in category_rows %}"{{ row.name }}"{% if not forloop.last %}, {% endif %}{% endfor %}];
+    const values = [{% for row in category_rows %}{{ row.current_value }}{% if not forloop.last %}, {% endif %}{% endfor %}];
+    const target = [{% for row in category_rows %}{{ row.target_ratio }}{% if not forloop.last %}, {% endif %}{% endfor %}];
+    const current = [{% for row in category_rows %}{{ row.current_ratio }}{% if not forloop.last %}, {% endif %}{% endfor %}];
+
+    new Chart(document.getElementById("categoryChart"), {
+        type: "bar",
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: "현재 비중(%)",
+                    data: current,
+                    backgroundColor: "#2f6fed",
+                },
+                {
+                    label: "목표 비중(%)",
+                    data: target,
+                    backgroundColor: "#7dc5fa",
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: { legend: { position: "bottom" } },
+        },
+    });
+
+    (function setupTickerAutoFill() {
+        const tickerInput = document.getElementById("id_ticker");
+        const stockNameInput = document.getElementById("id_stock_name");
+        const hint = document.getElementById("tickerLookupHint");
+        if (!tickerInput || !stockNameInput || !hint) return;
+
+        const setHint = (message, tone = "muted") => {
+            hint.classList.remove("good", "bad");
+            if (tone === "good") hint.classList.add("good");
+            if (tone === "bad") hint.classList.add("bad");
+            hint.textContent = message;
+        };
+
+        tickerInput.addEventListener("blur", async () => {
+            const ticker = tickerInput.value.trim().toUpperCase();
+            if (!ticker) {
+                setHint("티커 입력 후 다른 칸으로 이동하면 종목명을 자동 조회합니다.");
+                return;
+            }
+            setHint("종목명 조회 중...");
+            try {
+                const response = await fetch(
+                    `{% url 'portfolio:lookup_stock_name' %}?ticker=${encodeURIComponent(ticker)}`,
+                    { method: "GET" }
+                );
+                const contentType = response.headers.get("content-type") || "";
+                let data = {};
+                if (contentType.includes("application/json")) {
+                    data = await response.json();
+                } else {
+                    const raw = await response.text();
+                    setHint("조회 응답 형식이 올바르지 않습니다. 잠시 후 다시 시도해주세요.", "bad");
+                    console.error("lookup-stock-name non-json response", raw);
+                    return;
+                }
+                if (response.ok && data.stock_name) {
+                    stockNameInput.value = data.stock_name;
+                    setHint(`조회 완료: ${data.stock_name}`, "good");
+                } else {
+                    setHint(data.message || "조회 실패. 종목명을 직접 입력해주세요.", "bad");
+                }
+            } catch (_error) {
+                setHint("조회 중 오류가 발생했습니다. 종목명을 직접 입력해주세요.", "bad");
+            }
+        });
+    })();
+</script>
+</body>
+</html>
