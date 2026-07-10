@@ -1,0 +1,60 @@
+name: Build Windows executable
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/windows-build-2b09
+    paths:
+      - ".github/workflows/build-windows.yml"
+      - "scripts/build_windows.sh"
+      - "stockapp.spec"
+      - "requirements.txt"
+      - "launcher/**"
+      - "portfolio/**"
+      - "config/**"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build Windows executable
+        shell: bash
+        run: bash scripts/build_windows.sh
+
+      - name: Verify build output
+        shell: bash
+        run: |
+          test -f dist/stockapp/stockapp.exe
+          ls -la dist/stockapp/stockapp.exe
+
+      - name: Upload Windows build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stockapp-windows
+          path: dist/stockapp/
+          retention-days: 7
+
+      - name: Commit Windows build to repository
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist/stockapp/
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "Build Windows executable (stockapp.exe)"
+          git push
