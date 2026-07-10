@@ -34,7 +34,22 @@
    - 커밋 SHA
    - 실패/주의사항(있다면)
 
+## Cloud Agent 환경
+
+- `.cursor/environment.json`에 Python/PyInstaller 의존성 설치 스크립트가 정의되어 있습니다.
+- Cursor 관리형 Cloud Agent는 Ubuntu Linux에서 실행됩니다. Windows `.exe`는 GitHub Actions(`build-windows.yml`) 또는 Windows Self-Hosted Worker에서 빌드합니다.
+
+## GitHub Actions (자동 Windows 빌드)
+
+```bash
+gh workflow run build-windows.yml
+gh run list --workflow=build-windows.yml --limit 1
+gh run watch <run-id>
+```
+
+빌드 완료 후 `dist/stockapp/stockapp.exe`가 레포에 커밋됩니다.
+
 ## 참고
 
 - Linux 로컬 빌드는 `bash scripts/build_linux.sh`
-- Windows 빌드는 로컬 Linux/macOS 셸이 아닌 Windows 환경에서 수행하는 것을 권장
+- Windows 빌드는 Windows 환경(GitHub Actions `windows-latest` 또는 Self-Hosted Worker)에서 수행
