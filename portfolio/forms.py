@@ -190,7 +190,10 @@ class AccountCreateForm(forms.Form):
         cleaned = super().clean()
         group = cleaned.get("account_group", "")
         name = cleaned.get("account_name", "")
-        if "종합매매" in f"{group}{name}".replace(" ", ""):
+        label = f"{group}{name}".replace(" ", "")
+        if any(k in label for k in ("연금", "저축", "ISA", "IRP", "DC형", "퇴직")):
+            cleaned["is_jonghap"] = False
+        elif "종합매매" in label:
             cleaned["is_jonghap"] = True
         return cleaned
 
@@ -211,6 +214,9 @@ class AccountUpdateForm(forms.Form):
         cleaned = super().clean()
         group = cleaned.get("account_group", "")
         name = cleaned.get("account_name", "")
-        if "종합매매" in f"{group}{name}".replace(" ", ""):
+        label = f"{group}{name}".replace(" ", "")
+        if any(k in label for k in ("연금", "저축", "ISA", "IRP", "DC형", "퇴직")):
+            cleaned["is_jonghap"] = False
+        elif "종합매매" in label:
             cleaned["is_jonghap"] = True
         return cleaned

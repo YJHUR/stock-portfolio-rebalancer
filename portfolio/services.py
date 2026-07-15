@@ -50,7 +50,27 @@ def default_requires_jonghap_account(ticker: str) -> bool:
     return ticker.strip().upper() in DEFAULT_JONGHAP_ONLY_TICKERS
 
 
+# 연금/ISA 등은 이름만으로 종합매매 불가 계좌로 취급한다.
+_NON_JONGHAP_ACCOUNT_KEYWORDS = (
+    "연금",
+    "저축",
+    "ISA",
+    "IRP",
+    "DC형",
+    "개인연금",
+    "퇴직",
+)
+
+
+def is_non_jonghap_account_name(account: Account) -> bool:
+    label = f"{account.account_group} {account.name}".upper().replace(" ", "")
+    return any(keyword.upper().replace(" ", "") in label for keyword in _NON_JONGHAP_ACCOUNT_KEYWORDS)
+
+
 def is_jonghap_account(account: Account) -> bool:
+    # 연금저축/ISA 등은 종합매매 체크가 있어도 해외 REIT 매수 대상에서 제외
+    if is_non_jonghap_account_name(account):
+        return False
     if getattr(account, "is_jonghap", False):
         return True
     label = f"{account.account_group} {account.name}".replace(" ", "")
@@ -58,7 +78,10 @@ def is_jonghap_account(account: Account) -> bool:
 
 
 def stock_requires_jonghap_account(stock: Stock) -> bool:
-    return bool(getattr(stock, "requires_jonghap_account", False))
+    # DB 플래그 + AGNC/NLY 등 기본 목록(마이그레이션 전 데이터 포함)
+    if getattr(stock, "requires_jonghap_account", False):
+        return True
+    return default_requires_jonghap_account(stock.ticker)
 
 
 def account_can_trade_stock(account: Account, stock: Stock) -> bool:
