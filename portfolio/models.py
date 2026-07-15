@@ -17,6 +17,8 @@ class Stock(models.Model):
     ticker = models.CharField(max_length=10, unique=True)
     name = models.CharField(max_length=100)
     category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name="stocks")
+    # AGNC/NLY 등 국내 증권사에서 종합매매 계좌로만 거래 가능한 종목
+    requires_jonghap_account = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["ticker"]
@@ -44,6 +46,8 @@ class Account(models.Model):
     name = models.CharField(max_length=50, unique=True)
     account_group = models.CharField(max_length=50, blank=True, default="")
     initial_balance = models.BigIntegerField(default=0)
+    # 해외주식 등 종합매매 전용 종목을 거래할 수 있는 계좌
+    is_jonghap = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["name"]

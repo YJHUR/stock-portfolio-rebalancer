@@ -25,6 +25,47 @@ from .models import (
     Stock,
 )
 
+# 국내 증권사에서 종합매매 통장으로만 거래되는 종목(대표: 미국 mREIT)
+DEFAULT_JONGHAP_ONLY_TICKERS = frozenset(
+    {
+        "AGNC",
+        "NLY",
+        "STWD",
+        "RITM",
+        "ARR",
+        "TWO",
+        "CIM",
+        "BXMT",
+        "MFA",
+        "PMT",
+        "ORC",
+        "IVR",
+        "EFC",
+        "ABR",
+    }
+)
+
+
+def default_requires_jonghap_account(ticker: str) -> bool:
+    return ticker.strip().upper() in DEFAULT_JONGHAP_ONLY_TICKERS
+
+
+def is_jonghap_account(account: Account) -> bool:
+    if getattr(account, "is_jonghap", False):
+        return True
+    label = f"{account.account_group} {account.name}".replace(" ", "")
+    return "종합매매" in label
+
+
+def stock_requires_jonghap_account(stock: Stock) -> bool:
+    return bool(getattr(stock, "requires_jonghap_account", False))
+
+
+def account_can_trade_stock(account: Account, stock: Stock) -> bool:
+    if not stock_requires_jonghap_account(stock):
+        return True
+    return is_jonghap_account(account)
+
 
 @dataclass
 class RebalanceItem:
@@ -733,6 +774,11 @@ def grouped_rebalance_recommendations() -> list[dict[str, object]]:
         for holding in group_holdings:
             if holding.quantity > 0:
                 account_known_tickers.setdefault(holding.account_id, set()).add(holding.stock.ticker)
+        jonghap_account_ids = {account.id for account in group_accounts if is_jonghap_account(account)}
+        stock_jonghap_required: dict[str, bool] = {}
+        for entry_list in stocks_by_category.values():
+            for entry in entry_list:
+                stock_jonghap_required[entry.stock.ticker] = stock_requires_jonghap_account(entry.stock)
 
         def _krw_price_for_stock(stock_item: Stock) -> int:
             raw_price: Decimal | None = latest_prices.get(stock_item.ticker)
@@ -754,6 +800,10 @@ def grouped_rebalance_recommendations() -> list[dict[str, object]]:
 
         def _pick_account_for_buy(ticker: str, price: int) -> tuple[int, int] | None:
             affordable_accounts = [(aid, cash) for aid, cash in group_cash.items() if cash >= price]
+            if stock_jonghap_required.get(ticker, False):
+                affordable_accounts = [
+                    (aid, cash) for aid, cash in affordable_accounts if aid in jonghap_account_ids
+                ]
             if not affordable_accounts:
                 return None
 
@@ -921,13 +971,24 @@ def grouped_rebalance_recommendations() -> list[dict[str, object]]:
             while remaining_gap > 0:
                 eligible_states: list[dict[str, object]] = []
                 for state in stock_states:
+                    if state.get("blocked"):
+                        continue
                     price = int(state["price"])
                     if price <= 0:
                         continue
                     stock_gap = int(state["target_value"]) - int(state["current_value"])
                     if stock_gap <= 0:
                         continue
-                    if not any(cash >= price for cash in group_cash.values()):
+                    ticker = state["stock"].ticker
+                    if stock_jonghap_required.get(ticker, False):
+                        cash_pool = [
+                            cash
+                            for aid, cash in group_cash.items()
+                            if aid in jonghap_account_ids
+                        ]
+                    else:
+                        cash_pool = list(group_cash.values())
+                    if not any(cash >= price for cash in cash_pool):
                         continue
                     eligible_states.append(state)
 
@@ -948,7 +1009,9 @@ def grouped_rebalance_recommendations() -> list[dict[str, object]]:
 
                 picked = _pick_account_for_buy(chosen_stock.ticker, price)
                 if picked is None:
-                    break
+                    # 종합매매 제약/예수금으로 이 종목만 매수 불가 → 다른 종목 계속 시도
+                    chosen_state["blocked"] = True
+                    continue
                 target_account_id, available_cash = picked
 
                 shares = min(stock_gap // price, available_cash // price, remaining_gap // price)
@@ -956,7 +1019,8 @@ def grouped_rebalance_recommendations() -> list[dict[str, object]]:
                     # 잔여 부족금이 1주 미만이어도 예수금 최소화를 위해 1주 매수 허용
                     shares = 1
                 if shares <= 0:
-                    break
+                    chosen_state["blocked"] = True
+                    continue
 
                 amount = shares * price
                 group_cash[target_account_id] = available_cash - amount

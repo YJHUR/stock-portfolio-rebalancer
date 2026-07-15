@@ -47,6 +47,7 @@ from .db_context import using_default_database
 from .services import (
     category_rebalance_rows,
     category_breakdown,
+    default_requires_jonghap_account,
     grouped_account_rebalance_status,
     lookup_stock_name_by_ticker,
     portfolio_totals,
@@ -258,6 +259,7 @@ def _build_unified_activity_rows(today: date) -> list[dict]:
                         "cash_balance": running_balance,
                         "account_group": account.account_group,
                         "initial_balance": account.initial_balance,
+                        "is_jonghap": account.is_jonghap,
                     }
                 )
                 continue
@@ -584,6 +586,7 @@ def create_account(request):
             name=account_name,
             account_group=account_group,
             initial_balance=cash_balance,
+            is_jonghap=bool(form.cleaned_data.get("is_jonghap")),
         )
         AccountSnapshot.objects.update_or_create(
             account=account,
@@ -611,7 +614,8 @@ def update_account(request, pk):
         account.account_group = account_group
         account.name = account_name
         account.initial_balance = initial_balance
-        account.save(update_fields=["account_group", "name", "initial_balance"])
+        account.is_jonghap = bool(form.cleaned_data.get("is_jonghap"))
+        account.save(update_fields=["account_group", "name", "initial_balance", "is_jonghap"])
         messages.success(request, "계좌 정보를 수정했습니다. 최초입금액만 변경되고 현재 예수금은 유지됩니다.")
     else:
         messages.error(request, "계좌 수정에 실패했습니다. 입력값을 확인해주세요.")
@@ -715,7 +719,10 @@ def create_trade(request):
             )
         messages.success(request, "거래 내역과 예수금이 반영되었습니다.")
     else:
-        messages.error(request, "거래 내역 저장에 실패했습니다. 값을 확인해주세요.")
+        error_text = "; ".join(
+            f"{' '.join(errs)}" for errs in form.errors.values()
+        ) or "값을 확인해주세요."
+        messages.error(request, f"거래 내역 저장에 실패했습니다. {error_text}")
     return redirect("portfolio:dashboard")
 
 
@@ -1087,6 +1094,9 @@ def add_rebalance_stock(request):
         ticker = form.cleaned_data["ticker"]
         entered_name = form.cleaned_data["stock_name"]
         target_weight = form.cleaned_data["target_weight"]
+        requires_jonghap = bool(form.cleaned_data.get("requires_jonghap_account")) or default_requires_jonghap_account(
+            ticker
+        )
         resolved_name = lookup_stock_name_by_ticker(ticker, prefer_existing=False)
         stock_name = resolved_name or entered_name
 
@@ -1103,7 +1113,11 @@ def add_rebalance_stock(request):
 
         stock, stock_created = Stock.objects.get_or_create(
             ticker=ticker,
-            defaults={"name": stock_name, "category": rebalance_category.category},
+            defaults={
+                "name": stock_name,
+                "category": rebalance_category.category,
+                "requires_jonghap_account": requires_jonghap,
+            },
         )
 
         existing_rebalance = (
@@ -1123,6 +1137,9 @@ def add_rebalance_stock(request):
             if stock.category_id != rebalance_category.category_id:
                 stock.category = rebalance_category.category
                 update_fields.append("category")
+            if stock.requires_jonghap_account != requires_jonghap:
+                stock.requires_jonghap_account = requires_jonghap
+                update_fields.append("requires_jonghap_account")
             if update_fields:
                 stock.save(update_fields=update_fields)
                 stock_updated = True
@@ -1212,6 +1229,7 @@ def update_rebalance_stock(request, pk):
     if form.is_valid():
         new_rebalance_category = form.cleaned_data["rebalance_category"]
         target_weight = form.cleaned_data["target_weight"]
+        requires_jonghap = bool(form.cleaned_data.get("requires_jonghap_account"))
         old_category_name = entry.rebalance_category.category.name
         new_category_name = new_rebalance_category.category.name
         changed = False
@@ -1226,6 +1244,11 @@ def update_rebalance_stock(request, pk):
 
         if entry.target_weight != target_weight:
             entry.target_weight = target_weight
+            changed = True
+
+        if entry.stock.requires_jonghap_account != requires_jonghap:
+            entry.stock.requires_jonghap_account = requires_jonghap
+            entry.stock.save(update_fields=["requires_jonghap_account"])
             changed = True
 
         if changed:

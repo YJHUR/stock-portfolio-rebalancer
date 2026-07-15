@@ -35,6 +35,24 @@ class TradeForm(forms.ModelForm):
             "traded_on": DateInput(),
         }
 
+    def clean(self):
+        cleaned = super().clean()
+        account = cleaned.get("account")
+        stock = cleaned.get("stock")
+        trade_type = cleaned.get("trade_type")
+        if not account or not stock:
+            return cleaned
+        # 매수만 차단. 오입금 계좌에 이미 보유 중이면 매도는 허용한다.
+        if trade_type == Trade.BUY:
+            from .services import account_can_trade_stock
+
+            if not account_can_trade_stock(account, stock):
+                raise forms.ValidationError(
+                    f"{stock.ticker}는 종합매매 계좌에서만 매수할 수 있습니다. "
+                    "계좌의 '종합매매' 설정을 확인해주세요."
+                )
+        return cleaned
+
 
 class RebalanceCategoryCreateForm(forms.Form):
     category_name = forms.CharField(max_length=50, label="카테고리명", widget=forms.TextInput(attrs={"placeholder": "예: 테크"}))
@@ -76,6 +94,11 @@ class RebalanceStockCreateForm(forms.Form):
         label="종목목표비중(%)",
         widget=forms.NumberInput(attrs={"step": "0.01", "placeholder": "예: 5"}),
     )
+    requires_jonghap_account = forms.BooleanField(
+        required=False,
+        label="종합매매 전용",
+        help_text="AGNC/NLY 등은 미선택 시에도 자동 적용됩니다.",
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -106,6 +129,7 @@ class RebalanceStockUpdateForm(forms.Form):
         label="종목목표비중(%)",
         widget=forms.NumberInput(attrs={"step": "0.01"}),
     )
+    requires_jonghap_account = forms.BooleanField(required=False, label="종합매매 전용")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -154,21 +178,39 @@ class AccountCreateForm(forms.Form):
     account_group = forms.CharField(max_length=50, label="그룹")
     account_name = forms.CharField(max_length=50, label="계좌명")
     cash_balance = forms.IntegerField(min_value=0, label="최초입금액")
+    is_jonghap = forms.BooleanField(required=False, label="종합매매 계좌")
 
     def clean_account_group(self):
         return self.cleaned_data["account_group"].strip()
 
     def clean_account_name(self):
         return self.cleaned_data["account_name"].strip()
+
+    def clean(self):
+        cleaned = super().clean()
+        group = cleaned.get("account_group", "")
+        name = cleaned.get("account_name", "")
+        if "종합매매" in f"{group}{name}".replace(" ", ""):
+            cleaned["is_jonghap"] = True
+        return cleaned
 
 
 class AccountUpdateForm(forms.Form):
     account_group = forms.CharField(max_length=50, label="그룹")
     account_name = forms.CharField(max_length=50, label="계좌명")
     initial_balance = forms.IntegerField(min_value=0, label="최초입금액")
+    is_jonghap = forms.BooleanField(required=False, label="종합매매 계좌")
 
     def clean_account_group(self):
         return self.cleaned_data["account_group"].strip()
 
     def clean_account_name(self):
         return self.cleaned_data["account_name"].strip()
+
+    def clean(self):
+        cleaned = super().clean()
+        group = cleaned.get("account_group", "")
+        name = cleaned.get("account_name", "")
+        if "종합매매" in f"{group}{name}".replace(" ", ""):
+            cleaned["is_jonghap"] = True
+        return cleaned
