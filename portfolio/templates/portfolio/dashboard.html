@@ -762,15 +762,19 @@
                     {{ stock_add_form.ticker }}
                     {{ stock_add_form.stock_name }}
                     {{ stock_add_form.target_weight }}
+                    <label class="compact-field-label" style="display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
+                        {{ stock_add_form.requires_jonghap_account }} 종합매매전용
+                    </label>
                     <button type="submit">종목 추가</button>
                 </form>
-                <p id="tickerLookupHint" class="hint-text">티커 입력 후 다른 칸으로 이동하면 종목명을 자동 조회합니다.</p>
+                <p id="tickerLookupHint" class="hint-text">티커 입력 후 다른 칸으로 이동하면 종목명을 자동 조회합니다. AGNC/NLY 등은 종합매매 계좌에서만 매수 추천됩니다.</p>
                 <table>
                     <thead>
                         <tr>
                             <th>카테고리</th>
                             <th>종목</th>
                             <th>종목목표비중(%)</th>
+                            <th>종합매매</th>
                             <th>
                                 관리
                                 <form action="{% url 'portfolio:equalize_all_rebalance_stocks' %}" method="post" style="display: inline; margin-left: 6px;">
@@ -806,6 +810,15 @@
                                 />
                             </td>
                             <td>
+                                <input
+                                    type="checkbox"
+                                    name="requires_jonghap_account"
+                                    form="reb-stock-update-{{ row.id }}"
+                                    {% if row.stock.requires_jonghap_account %}checked{% endif %}
+                                    title="종합매매 계좌에서만 매수"
+                                />
+                            </td>
+                            <td>
                                 <form id="reb-stock-update-{{ row.id }}" action="{% url 'portfolio:update_rebalance_stock' row.id %}" method="post" style="display: inline;">
                                     {% csrf_token %}
                                     <button type="submit" class="btn-inline">수정</button>
@@ -817,7 +830,7 @@
                             </td>
                         </tr>
                     {% empty %}
-                        <tr><td colspan="4">등록된 종목이 없습니다.</td></tr>
+                        <tr><td colspan="5">등록된 종목이 없습니다.</td></tr>
                     {% endfor %}
                     </tbody>
                 </table>
@@ -1059,10 +1072,14 @@
                         <label for="{{ account_add_form.cash_balance.id_for_label }}" class="compact-field-label">Initial Deposit</label>
                         {{ account_add_form.cash_balance }}
                     </div>
-                    <div></div>
+                    <div>
+                        <label class="compact-field-label" style="display: inline-flex; align-items: center; gap: 4px;">
+                            {{ account_add_form.is_jonghap }} 종합매매
+                        </label>
+                    </div>
                 </div>
                 <div class="cashflow-row-bottom">
-                    <div class="muted">계좌 개설 내역은 하단 통합표에 표시됩니다.</div>
+                    <div class="muted">계좌 개설 내역은 하단 통합표에 표시됩니다. AGNC/NLY 등은 종합매매 계좌에서만 매수됩니다.</div>
                     <button type="submit">계좌 추가</button>
                 </div>
             </form>
@@ -1204,6 +1221,7 @@
                                 data-account-group="{{ row.account_group|escape }}"
                                 data-account-name="{{ row.account_name|escape }}"
                                 data-initial-balance="{{ row.initial_balance }}"
+                                data-is-jonghap="{% if row.is_jonghap %}1{% else %}0{% endif %}"
                             >
                                 수정
                             </button>
@@ -1350,6 +1368,12 @@
                     <div class="field-wrap">
                         <label for="modalAccountInitialBalance" class="compact-field-label">Initial Deposit</label>
                         <input type="number" id="modalAccountInitialBalance" name="initial_balance" min="0" step="1" required />
+                    </div>
+                    <div class="field-wrap">
+                        <label class="compact-field-label" style="display: inline-flex; align-items: center; gap: 4px;">
+                            <input type="checkbox" id="modalAccountIsJonghap" name="is_jonghap" />
+                            종합매매 계좌
+                        </label>
                     </div>
                 </div>
                 <div class="modal-actions">
@@ -1666,6 +1690,7 @@
         const groupField = document.getElementById("modalAccountGroup");
         const nameField = document.getElementById("modalAccountName");
         const initialBalanceField = document.getElementById("modalAccountInitialBalance");
+        const isJonghapField = document.getElementById("modalAccountIsJonghap");
         const openButtons = document.querySelectorAll(".open-account-edit");
 
         const closeModal = () => {
@@ -1685,6 +1710,9 @@
                 groupField.value = button.dataset.accountGroup || "";
                 nameField.value = button.dataset.accountName || "";
                 initialBalanceField.value = button.dataset.initialBalance || "0";
+                if (isJonghapField) {
+                    isJonghapField.checked = button.dataset.isJonghap === "1";
+                }
                 openModal();
             });
         });
